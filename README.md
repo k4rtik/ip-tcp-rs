@@ -9,4 +9,4 @@
 
 ## Authors
 - Kartik Singhal (ksinghal)
-- Sumukha TV (stumkurv)
+- Sumukha Tumkur Vani (stumkurv)
