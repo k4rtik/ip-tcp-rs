@@ -9,21 +9,21 @@
 #define HOST_MAX_LENGTH 256 // RFC 2181
 
 typedef struct {
-	// The local host's listening address
-	char local_phys_host[HOST_MAX_LENGTH];
-	uint16_t local_phys_port;
+    // The local host's listening address
+    char local_phys_host[HOST_MAX_LENGTH];
+    uint16_t local_phys_port;
 
-	// List of link_t's
-	list_t* links;
+    // List of link_t's
+    list_t *links;
 } lnx_t;
 
 typedef struct {
-	// The remote host's listening address
-	char remote_phys_host[HOST_MAX_LENGTH];
-	uint16_t remote_phys_port;
+    // The remote host's listening address
+    char remote_phys_host[HOST_MAX_LENGTH];
+    uint16_t remote_phys_port;
 
-	struct in_addr local_virt_ip;
-	struct in_addr remote_virt_ip;
+    struct in_addr local_virt_ip;
+    struct in_addr remote_virt_ip;
 } link_t;
 
 /*

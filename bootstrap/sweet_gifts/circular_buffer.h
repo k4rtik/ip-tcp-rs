@@ -3,7 +3,7 @@
 
 /**
  * circular_buffer.h
- * 
+ *
  * Stephen Poletto (spoletto)
  * Walter Blaurock (wblauroc)
  * Computer Networks -- Spring 2011
@@ -47,7 +47,7 @@ uint16_t circular_buffer_get_capacity(circular_buffer_t *cbuf);
  * Returns the size of data contained by this buffer.
  */
 uint16_t circular_buffer_get_size(circular_buffer_t *cbuf);
- 
+
 /**
  * Checks if the buffer is empty.
  */
@@ -63,14 +63,15 @@ int circular_buffer_is_full(circular_buffer_t *cbuf);
  * of bytes copied. Blocks until at least some of the data
  * is written. Same behavior as write.
  */
-int circular_buffer_write(circular_buffer_t *cbuf, const void *buf, size_t count);
+int circular_buffer_write(circular_buffer_t *cbuf, const void *buf,
+                          size_t count);
 
 /**
  * Read data from the circular buffer. Blocks until at least
  * some data is available. Some behavior as read.
  */
 int circular_buffer_read(circular_buffer_t *cbuf, void *buf, size_t count);
- 
+
 /**
  * Print buffer contents as if they are characters. Will only print
  * the buffer contents between read_pointer and read_pointer + size.
@@ -81,8 +82,8 @@ void circular_buffer_print_unread_contents(circular_buffer_t *cbuf);
  * Returns the number of bytes left in this circular buffer.
  */
 uint16_t circular_buffer_get_available_capacity(circular_buffer_t *cbuf);
- 
-/** 
+
+/**
  * Signal that the data being written into the buffer has reached
  * end of file. Subsequent calls to circular_buffer_write will fail
  * and return 0. circular_buffer_read will continue to read data
@@ -90,5 +91,5 @@ uint16_t circular_buffer_get_available_capacity(circular_buffer_t *cbuf);
  * return 0.
  */
 void circular_buffer_signal_eof(circular_buffer_t *cbuf);
- 
+
 #endif

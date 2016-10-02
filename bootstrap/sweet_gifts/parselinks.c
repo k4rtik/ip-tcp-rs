@@ -1,14 +1,14 @@
 #include <arpa/inet.h>
 #include <inttypes.h>
-#include <string.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-#include "parselinks.h"
 #include "list.h"
+#include "parselinks.h"
 
-int parse_double(FILE *f, char phys_host[HOST_MAX_LENGTH], uint16_t *phys_port)
-{
+int parse_double(FILE *f, char phys_host[HOST_MAX_LENGTH],
+                 uint16_t *phys_port) {
     char phys_host_in[256];
     int phys_port_in;
     int i;
@@ -28,8 +28,7 @@ int parse_double(FILE *f, char phys_host[HOST_MAX_LENGTH], uint16_t *phys_port)
 }
 
 int parse_quad(FILE *f, char phys_host[HOST_MAX_LENGTH], uint16_t *phys_port,
-                 struct in_addr *loc_virt_ip, struct in_addr *rem_virt_ip)
-{
+               struct in_addr *loc_virt_ip, struct in_addr *rem_virt_ip) {
     char phys_host_in[256];
     int phys_port_in;
     int loc_virt_ip_in[4];
@@ -51,37 +50,35 @@ int parse_quad(FILE *f, char phys_host[HOST_MAX_LENGTH], uint16_t *phys_port,
     *phys_port = phys_port_in;
 
     loc_virt_ip->s_addr = 0;
-    for (i=0; i<4; i++){
+    for (i = 0; i < 4; i++) {
         if (loc_virt_ip_in[i] < 0 || loc_virt_ip_in[i] > 255) {
             return -1;
         }
-        loc_virt_ip->s_addr |= loc_virt_ip_in[i] << (24-i*8);
+        loc_virt_ip->s_addr |= loc_virt_ip_in[i] << (24 - i * 8);
     }
 
     rem_virt_ip->s_addr = 0;
-    for (i=0; i<4; i++){
+    for (i = 0; i < 4; i++) {
         if (rem_virt_ip_in[i] < 0 || rem_virt_ip_in[i] > 255) {
             return -1;
         }
-        rem_virt_ip->s_addr |= rem_virt_ip_in[i] << (24-i*8);
+        rem_virt_ip->s_addr |= rem_virt_ip_in[i] << (24 - i * 8);
     }
     return 0;
 }
 
-int parse_line(FILE *f, link_t *link)
-{
+int parse_line(FILE *f, link_t *link) {
     return parse_quad(f, link->remote_phys_host, &link->remote_phys_port,
-                        &link->local_virt_ip, &link->remote_virt_ip);
+                      &link->local_virt_ip, &link->remote_virt_ip);
 }
 
-lnx_t *parse_links(char *filename)
-{
+lnx_t *parse_links(char *filename) {
     FILE *f;
     lnx_t lnx;
     link_t *line;
-    f = fopen(filename,"r");
-  
-    if (f == NULL){
+    f = fopen(filename, "r");
+
+    if (f == NULL) {
         return NULL;
     }
 
@@ -102,7 +99,7 @@ lnx_t *parse_links(char *filename)
             fprintf(stderr, "parse_links: out of memory\n");
             exit(1);
         }
-	
+
         if (parse_line(f, line) == -1) {
             free(line);
             lnx_t *ret = malloc(sizeof(lnx_t));
@@ -126,11 +123,10 @@ lnx_t *parse_links(char *filename)
     return ret;
 }
 
-void free_links(list_t *links)
-{
+void free_links(list_t *links) {
     node_t *curr;
-	for (curr = links->head; curr != NULL; curr = curr->next) {
-		free (curr->data);
-	}
-	list_free(&links);
+    for (curr = links->head; curr != NULL; curr = curr->next) {
+        free(curr->data);
+    }
+    list_free(&links);
 }

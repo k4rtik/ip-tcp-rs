@@ -22,7 +22,7 @@ typedef struct node_t {
 } node_t;
 
 typedef struct list_t {
-	node_t *head;
+    node_t *head;
 } list_t;
 
 /**
@@ -32,8 +32,8 @@ typedef struct list_t {
  */
 void list_init(list_t **list);
 
-/** 
- * Frees all memory explicitly allocated by the list and sets the 
+/**
+ * Frees all memory explicitly allocated by the list and sets the
  * pointer to null.
  */
 void list_free(list_t **list);
@@ -44,7 +44,7 @@ void list_free(list_t **list);
  */
 void list_append(list_t *list, void *data);
 
-/** 
+/**
  * Returns 1 if the list is empty, 0 if not.
  */
 int list_empty(list_t *list);
