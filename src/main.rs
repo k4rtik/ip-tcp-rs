@@ -1,5 +1,10 @@
 use std::io;
 use std::thread;
+use std::env;
+use std::error::Error;
+use std::fs::File;
+use std::io::prelude::*;
+use std::path::Path;
 
 fn is_ip(ip_addr: &str) -> bool {
 	let mut idx = 0;
@@ -9,7 +14,11 @@ fn is_ip(ip_addr: &str) -> bool {
 	for i in ip_split {
 		let part = i.parse::<i32>();
 		match part {
-			Ok(tmp) => {}
+			Ok(tmp) => {
+					if (tmp < 0 || tmp > 255) {
+						return false;
+					}
+				   }
 			Err(e) => {
 					println!("IP address not in format!");
 					return false;
@@ -82,9 +91,20 @@ fn cli_impl() {
 }
 
 fn main() {
-	println!("Starting Node...");
+	let args: Vec<_> = env::args().collect();
+	let lnx_file_path = Path::new(&args[1]);
+	let mut file = match File::open(&lnx_file_path) {
+		Err(why) => panic!("couldn't open the lnx file!"),
+		Ok(file) => file,
+	};
+	let mut contents = String::new();
+	match file.read_to_string(&mut contents) {
+		Err(why) => panic!("couldn't read the file!"),
+		Ok(_) => print!("{}", contents),
+	}
 	let child = thread::spawn(move || {
+		println!("Starting node...");	
 		cli_impl();
 	});
-	let res = child.join();
+	let res = child.join(); 
 }
