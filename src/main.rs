@@ -1,8 +1,8 @@
-use std::io;
-use std::thread;
 use std::fs::File;
-use std::io::prelude::*;
-use std::str::FromStr;
+use std::io::{BufReader, BufRead};
+use std::io;
+use std::net::Ipv4Addr;
+use std::thread;
 
 #[macro_use]
 extern crate log;
@@ -13,49 +13,46 @@ use clap::{App, Arg};
 
 
 struct RouteInfo {
-    self_ip: String,
-    self_port: i32,
+    // std::net::UdpSocket accepts string in host:port format
+    socket_addr: String,
     interfaces: Vec<Interface>,
 }
 
+#[derive(Debug)]
 struct Interface {
-    ip: String,
-    port: i32,
-    vip: String,
-    to_ip: String,
+    to_socket_addr: String,
+    from_vip: Ipv4Addr,
+    to_vip: Ipv4Addr,
 }
 
 
-fn parse_lnx(contents: &str) -> RouteInfo {
-    let content = &mut String::new();
-    content.push_str(contents);
-    let content_split_vec = content.trim().split('\n').collect::<Vec<&str>>();
-    let mut tmp = content_split_vec[0].split(':').collect::<Vec<&str>>();
-    let s_ip = String::from(tmp[0]);
-    let s_port = i32::from_str(tmp[1]).unwrap();
-    let mut ifaces = Vec::<Interface>::new();
-    println!("{}", content_split_vec.len());
-    for idx in 1..content_split_vec.len() {
-        tmp = content_split_vec[idx].split(' ').collect::<Vec<&str>>();
-        let i = Interface {
-            ip: String::from(tmp[0].split(':').collect::<Vec<&str>>()[0]),
-            port: i32::from_str(tmp[0].split(':').collect::<Vec<&str>>()[1]).unwrap(),
-            vip: String::from(tmp[1]),
-            to_ip: String::from(tmp[2]),
-        };
-        ifaces.push(i);
+fn parse_lnx(filename: &str) -> RouteInfo {
+    let mut file = BufReader::new(File::open(filename).unwrap());
+
+    let mut myinfo = String::new();
+    file.read_line(&mut myinfo).ok().expect("Parse error: couldn't read self information");
+
+    let socket_addr = myinfo.trim().to_string();
+
+    let interfaces: Vec<_> = file.lines()
+        .map(|line| {
+            let line = line.unwrap();
+            let line_vec: Vec<&str> = line.split(" ").collect();
+            Interface {
+                to_socket_addr: line_vec[0].to_string(),
+                from_vip: line_vec[1].parse::<Ipv4Addr>().unwrap(),
+                to_vip: line_vec[2].parse::<Ipv4Addr>().unwrap(),
+            }
+        })
+        .collect();
+
+    debug!("{:?}", socket_addr);
+    debug!("{:?}", interfaces);
+
+    RouteInfo {
+        socket_addr: socket_addr,
+        interfaces: interfaces,
     }
-    println!("{}", ifaces[0].ip);
-    let ri = RouteInfo {
-        self_ip: s_ip,
-        self_port: s_port,
-        interfaces: ifaces,
-    };
-    println!("{}, {}, {}",
-             ri.self_ip,
-             ri.self_port,
-             ri.interfaces[0].to_ip);
-    return ri;
 }
 
 // TODO this can be replaced with from_str() for std::net::Ipv4Addr
@@ -152,18 +149,8 @@ fn main() {
         .get_matches();
 
     let lnx_file = matches.value_of("lnx file").unwrap().parse::<String>().unwrap();
-    let mut file = match File::open(lnx_file) {
-        Err(_) => panic!("couldn't open the lnx file!"),
-        Ok(file) => file,
-    };
 
-    let mut contents = String::new();
-    match file.read_to_string(&mut contents) {
-        Err(_) => panic!("couldn't read the file!"),
-        Ok(_) => print!("{}", contents),
-    }
-
-    let ri = parse_lnx(&contents);
+    let ri = parse_lnx(&lnx_file);
 
     let child = thread::spawn(move || {
         println!("Starting node...");
