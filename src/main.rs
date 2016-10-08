@@ -1,10 +1,16 @@
 use std::io;
 use std::thread;
-use std::env;
 use std::fs::File;
 use std::io::prelude::*;
-use std::path::Path;
 
+#[macro_use]
+extern crate log;
+extern crate env_logger;
+extern crate clap;
+
+use clap::{App, Arg};
+
+// TODO this can be replaced with from_str() for std::net::Ipv4Addr
 fn is_ip(ip_addr: &str) -> bool {
     let mut idx = 0;
     let ip = &mut String::new();
@@ -90,12 +96,19 @@ fn cli_impl() {
 }
 
 fn main() {
-    let args: Vec<_> = env::args().collect();
-    let lnx_file_path = Path::new(&args[1]);
-    let mut file = match File::open(&lnx_file_path) {
+    env_logger::init().ok().expect("Failed to initialize logger");
+
+    let matches = App::new("node")
+        .version("0.1.0")
+        .arg(Arg::with_name("lnx file").required(true).index(1).help("e.g.: A.lnx"))
+        .get_matches();
+
+    let lnx_file = matches.value_of("lnx file").unwrap().parse::<String>().unwrap();
+    let mut file = match File::open(lnx_file) {
         Err(_) => panic!("couldn't open the lnx file!"),
         Ok(file) => file,
     };
+
     let mut contents = String::new();
     match file.read_to_string(&mut contents) {
         Err(_) => panic!("couldn't read the file!"),
