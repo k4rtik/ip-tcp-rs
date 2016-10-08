@@ -2,6 +2,7 @@ use std::io;
 use std::thread;
 use std::fs::File;
 use std::io::prelude::*;
+use std::str::FromStr;
 
 #[macro_use]
 extern crate log;
@@ -9,6 +10,53 @@ extern crate env_logger;
 extern crate clap;
 
 use clap::{App, Arg};
+
+
+struct RouteInfo {
+    self_ip: String,
+    self_port: i32,
+    interfaces: Vec<Interface>,
+}
+
+struct Interface {
+    ip: String,
+    port: i32,
+    vip: String,
+    to_ip: String,
+}
+
+
+fn parse_lnx(contents: &str) -> RouteInfo {
+    let content = &mut String::new();
+    content.push_str(contents);
+    let content_split_vec = content.trim().split('\n').collect::<Vec<&str>>();
+    let mut tmp = content_split_vec[0].split(':').collect::<Vec<&str>>();
+    let s_ip = String::from(tmp[0]);
+    let s_port = i32::from_str(tmp[1]).unwrap();
+    let mut ifaces = Vec::<Interface>::new();
+    println!("{}", content_split_vec.len());
+    for idx in 1..content_split_vec.len() {
+        tmp = content_split_vec[idx].split(' ').collect::<Vec<&str>>();
+        let i = Interface {
+            ip: String::from(tmp[0].split(':').collect::<Vec<&str>>()[0]),
+            port: i32::from_str(tmp[0].split(':').collect::<Vec<&str>>()[1]).unwrap(),
+            vip: String::from(tmp[1]),
+            to_ip: String::from(tmp[2]),
+        };
+        ifaces.push(i);
+    }
+    println!("{}", ifaces[0].ip);
+    let ri = RouteInfo {
+        self_ip: s_ip,
+        self_port: s_port,
+        interfaces: ifaces,
+    };
+    println!("{}, {}, {}",
+             ri.self_ip,
+             ri.self_port,
+             ri.interfaces[0].to_ip);
+    return ri;
+}
 
 // TODO this can be replaced with from_str() for std::net::Ipv4Addr
 fn is_ip(ip_addr: &str) -> bool {
@@ -114,6 +162,9 @@ fn main() {
         Err(_) => panic!("couldn't read the file!"),
         Ok(_) => print!("{}", contents),
     }
+
+    let ri = parse_lnx(&contents);
+
     let child = thread::spawn(move || {
         println!("Starting node...");
         cli_impl();
