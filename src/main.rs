@@ -11,20 +11,8 @@ extern crate clap;
 
 use clap::{App, Arg};
 
-
-struct RouteInfo {
-    // std::net::UdpSocket accepts string in host:port format
-    socket_addr: String,
-    interfaces: Vec<Interface>,
-}
-
-#[derive(Debug)]
-struct Interface {
-    to_socket_addr: String,
-    from_vip: Ipv4Addr,
-    to_vip: Ipv4Addr,
-}
-
+mod datalink;
+use datalink::*;
 
 fn parse_lnx(filename: &str) -> RouteInfo {
     let mut file = BufReader::new(File::open(filename).unwrap());
@@ -32,16 +20,17 @@ fn parse_lnx(filename: &str) -> RouteInfo {
     let mut myinfo = String::new();
     file.read_line(&mut myinfo).ok().expect("Parse error: couldn't read self information");
 
+    // TODO validate socket_addr
     let socket_addr = myinfo.trim().to_string();
 
     let interfaces: Vec<_> = file.lines()
         .map(|line| {
             let line = line.unwrap();
             let line_vec: Vec<&str> = line.split(" ").collect();
-            Interface {
+            SocketAddrInterface {
                 to_socket_addr: line_vec[0].to_string(),
-                from_vip: line_vec[1].parse::<Ipv4Addr>().unwrap(),
-                to_vip: line_vec[2].parse::<Ipv4Addr>().unwrap(),
+                src_vip: line_vec[1].parse::<Ipv4Addr>().unwrap(),
+                dst_vip: line_vec[2].parse::<Ipv4Addr>().unwrap(),
             }
         })
         .collect();
@@ -151,6 +140,8 @@ fn main() {
     let lnx_file = matches.value_of("lnx file").unwrap().parse::<String>().unwrap();
 
     let ri = parse_lnx(&lnx_file);
+
+    let datalink = DataLink::new(ri);
 
     let child = thread::spawn(move || {
         println!("Starting node...");
