@@ -8,6 +8,7 @@ use std::thread;
 extern crate log;
 extern crate env_logger;
 extern crate clap;
+extern crate pnet;
 
 use clap::{App, Arg};
 
@@ -116,6 +117,12 @@ fn cli_impl() {
                     if is_ip(cmd_vec[1]) == false {
                         println!("IP address is not in format!");
                     }
+		    else {
+			    	let dest_ip = cmd_vec[1].parse::<Ipv4Addr>().unwrap();
+				let proto = cmd_vec[2].parse::<i32>().unwrap();
+				let string = cmd_vec[3].to_string();
+				//.send_packet(dest_ip, proto, string);
+			}
                 }
             }
             "shutdown" => {
@@ -145,7 +152,7 @@ fn main() {
 
     let child = thread::spawn(move || {
         println!("Starting node...");
-        cli_impl();
+        cli_impl(datalink);
     });
     child.join().unwrap();
 }

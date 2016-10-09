@@ -1,3 +1,4 @@
+use pnet::packet::ipv4::Ipv4Packet;
 use std::net::UdpSocket;
 use std::net::Ipv4Addr;
 
@@ -50,6 +51,13 @@ impl DataLink {
                 .collect(),
         }
     }
+	
+    //called by the IP Layer
+    pub fn send_packet(&self, dest_addr: Ipv4Addr, proto: i32, pkt: Ipv4Packet) {
+		debug!("{:?}, {:?}, {:?}", dest_addr, proto, pkt);
+
+		//self.local_socket.send_to();
+	}
 }
 
 pub fn activate_interface(id: usize) {}
@@ -58,5 +66,3 @@ pub fn deactivate_interface(id: usize) {}
 
 pub fn get_interfaces() {}
 
-// called by IP layer
-pub fn send_packet() {}
