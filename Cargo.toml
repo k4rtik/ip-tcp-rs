@@ -14,3 +14,6 @@ default-features = false
 [[bin]]
 name = "node"
 path = "src/main.rs"
+
+[dependencies.pnet]
+version = "0.13.0"
