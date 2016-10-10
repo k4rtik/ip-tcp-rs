@@ -1,16 +1,18 @@
 #[macro_use]
 extern crate log;
-extern crate env_logger;
+
 extern crate clap;
+extern crate env_logger;
 extern crate pnet;
 
+use clap::{App, Arg};
 use pnet::packet::ipv4::Ipv4Packet;
+
 use std::fs::File;
 use std::io::{self, BufReader, BufRead, Write};
 use std::net::Ipv4Addr;
+use std::str::FromStr;
 use std::thread;
-
-use clap::{App, Arg};
 
 mod datalink;
 use datalink::*;
@@ -21,7 +23,7 @@ fn parse_lnx(filename: &str) -> RouteInfo {
     let mut file = BufReader::new(File::open(filename).unwrap());
 
     let mut myinfo = String::new();
-    file.read_line(&mut myinfo).ok().expect("Parse error: couldn't read self information");
+    file.read_line(&mut myinfo).expect("Parse error: couldn't read self information");
 
     // TODO validate socket_addr
     let socket_addr = myinfo.trim().to_string();
@@ -29,7 +31,7 @@ fn parse_lnx(filename: &str) -> RouteInfo {
     let interfaces: Vec<_> = file.lines()
         .map(|line| {
             let line = line.unwrap();
-            let line_vec: Vec<&str> = line.split(" ").collect();
+            let line_vec: Vec<&str> = line.split(' ').collect();
             SocketAddrInterface {
                 to_socket_addr: line_vec[0].to_string(),
                 src_vip: line_vec[1].parse::<Ipv4Addr>().unwrap(),
@@ -47,32 +49,14 @@ fn parse_lnx(filename: &str) -> RouteInfo {
     }
 }
 
-// TODO this can be replaced with from_str() for std::net::Ipv4Addr
 fn is_ip(ip_addr: &str) -> bool {
-    let mut idx = 0;
-    let ip = &mut String::new();
-    ip.push_str(ip_addr);
-    let ip_split = ip.split('.');
-    for i in ip_split {
-        let part = i.parse::<i32>();
-        match part {
-            Ok(tmp) => {
-                if tmp < 0 || tmp > 255 {
-                    return false;
-                }
-            }
-            Err(_) => {
-                println!("IP address not in format!");
-                return false;
-            }
-        }
-        idx += 1;
-        if idx > 4 {
-            println!("IP address is longer than expected!");
-            return false;
+    match Ipv4Addr::from_str(ip_addr) {
+        Ok(_) => true,
+        Err(_) => {
+            debug!("{:?}", ip_addr);
+            false
         }
     }
-    return true;
 }
 
 fn cli_impl(mut datalink: DataLink) {
@@ -89,7 +73,7 @@ fn cli_impl(mut datalink: DataLink) {
             Ok(_) => {
                 let cmd_split = cmd.trim().split(' ');
                 let cmd_vec = cmd_split.collect::<Vec<&str>>();
-                match &cmd_vec[0] as &str {
+                match cmd_vec[0] {
                     "interfaces" => {
                         println!("id\tsource\t\tdestination\tstatus");
                         for (i, iface) in datalink.get_interfaces().iter().enumerate() {
@@ -128,21 +112,19 @@ fn cli_impl(mut datalink: DataLink) {
                     "send" => {
                         if cmd_vec.len() != 4 {
                             println!("Missing parameters");
+                        } else if !is_ip(cmd_vec[1]) {
+                            println!("IP address is not in format!");
                         } else {
-                            if is_ip(cmd_vec[1]) == false {
-                                println!("IP address is not in format!");
-                            } else {
-                                let dest_ip = cmd_vec[1].parse::<Ipv4Addr>().unwrap();
-                                let proto = cmd_vec[2].parse::<u8>().unwrap();
-                                let string = cmd_vec[3];
-                                let mut payload = string.to_string().into_bytes();
-                                let payload_len = payload.len();
-                                let pkt_buf =
-                                    ip::send_message(dest_ip, &mut payload, payload_len, proto)
-                                        .into_inner();
-                                let pkt = Ipv4Packet::new(&*pkt_buf).unwrap();
-                                datalink.send_packet(dest_ip, pkt);
-                            }
+                            let dest_ip = cmd_vec[1].parse::<Ipv4Addr>().unwrap();
+                            let proto = cmd_vec[2].parse::<u8>().unwrap();
+                            let string = cmd_vec[3];
+                            let mut payload = string.to_string().into_bytes();
+                            let payload_len = payload.len();
+                            let pkt_buf =
+                                ip::send_message(dest_ip, &mut payload, payload_len, proto)
+                                    .into_inner();
+                            let pkt = Ipv4Packet::new(&*pkt_buf).unwrap();
+                            datalink.send_packet(dest_ip, pkt);
                         }
                     }
                     "shutdown" => {
@@ -162,7 +144,7 @@ fn cli_impl(mut datalink: DataLink) {
 }
 
 fn main() {
-    env_logger::init().ok().expect("Failed to initialize logger");
+    env_logger::init().expect("Failed to initialize logger");
 
     let matches = App::new("node")
         .version("0.1.0")

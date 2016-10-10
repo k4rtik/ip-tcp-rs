@@ -56,18 +56,17 @@ impl DataLink {
     // to be called only by the IP Layer
     pub fn send_packet(&self, next_hop: Ipv4Addr, pkt: Ipv4Packet) -> bool {
         debug!("{:?}, {:?}", next_hop, pkt);
-        let priv_iface =
-            match (&self.interfaces).into_iter().find(|ref iface| iface.dst == next_hop) {
-                Some(priv_iface) => priv_iface,
-                None => panic!("Interface doesn't exist!"),
-            };
+        let priv_iface = match (&self.interfaces).into_iter().find(|iface| iface.dst == next_hop) {
+            Some(priv_iface) => priv_iface,
+            None => panic!("Interface doesn't exist!"),
+        };
         if priv_iface.enabled {
             let socket_addr = priv_iface.socket_addr.clone();
             debug!("{:?}", socket_addr);
             debug!("{:?}", pkt.packet());
             let sent_count = self.local_socket.send_to(pkt.packet(), &*socket_addr);
             debug!("{:?}", sent_count);
-            if sent_count.unwrap() > 0 { true } else { false }
+            sent_count.unwrap() > 0
         } else {
             info!("interface for {:?} is disabled", next_hop);
             false
@@ -89,29 +88,27 @@ impl DataLink {
 
     pub fn activate_interface(&mut self, id: usize) -> bool {
         if id > self.interfaces.len() {
+            println!("interface {} doesn't exist!", id);
             false
+        } else if self.interfaces[id].enabled {
+            println!("interface {} is already enabled!", id);
+            true
         } else {
-            if self.interfaces[id].enabled == true {
-                println!("interface {} is already enabled!", id);
-                true
-            } else {
-                self.interfaces[id].enabled = true;
-                true
-            }
+            self.interfaces[id].enabled = true;
+            true
         }
     }
 
     pub fn deactivate_interface(&mut self, id: usize) -> bool {
         if id > self.interfaces.len() {
+            println!("interface {} doesn't exist!", id);
             false
+        } else if self.interfaces[id].enabled {
+            self.interfaces[id].enabled = false;
+            true
         } else {
-            if self.interfaces[id].enabled == false {
-                println!("interface {} is already disabled!", id);
-                false
-            } else {
-                self.interfaces[id].enabled = false;
-                true
-            }
+            println!("interface {} is already disabled!", id);
+            false
         }
     }
 }
