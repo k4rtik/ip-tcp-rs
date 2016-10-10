@@ -6,13 +6,11 @@ extern crate env_logger;
 extern crate pnet;
 
 use clap::{App, Arg};
-use pnet::packet::ipv4::Ipv4Packet;
 
 use std::fs::File;
 use std::io::{self, BufReader, BufRead, Write};
 use std::net::Ipv4Addr;
 use std::str::FromStr;
-use std::thread;
 
 mod datalink;
 use datalink::*;
@@ -120,11 +118,15 @@ fn cli_impl(datalink: &DataLink) {
                             let string = cmd_vec[3];
                             let mut payload = string.to_string().into_bytes();
                             let payload_len = payload.len();
-                            let pkt_buf =
-                                ip::send_message(dest_ip, &mut payload, payload_len, proto)
-                                    .into_inner();
-                            let pkt = Ipv4Packet::new(&*pkt_buf).unwrap();
-                            datalink.send_packet(dest_ip, pkt);
+                            if ip::send_message(datalink,
+                                                dest_ip,
+                                                &mut payload,
+                                                payload_len,
+                                                proto) {
+                                info!("Message sent succesfully");
+                            } else {
+                                error!("Message sending failed!");
+                            }
                         }
                     }
                     "shutdown" => {
@@ -161,6 +163,4 @@ fn main() {
 
     println!("Starting node...");
     cli_impl(&datalink);
-
-    // child.join().unwrap();
 }

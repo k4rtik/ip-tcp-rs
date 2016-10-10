@@ -3,7 +3,7 @@ use pnet::packet::Packet;
 use std::cell::Cell;
 use std::net::Ipv4Addr;
 use std::net::UdpSocket;
-use std::{thread, time};
+use std::thread;
 
 pub struct RouteInfo {
     // std::net::UdpSocket accepts string in host:port format
@@ -128,7 +128,7 @@ impl DataLink {
 
     pub fn start_receiver(&self) {
         let tmp = self.local_socket.try_clone().unwrap();
-        let child = thread::spawn(move || {
+        thread::spawn(move || {
             debug!("Starting reveiver...");
             recv_data_from_interface(tmp);
         });
@@ -136,8 +136,8 @@ impl DataLink {
 }
 pub fn recv_data_from_interface(sock: UdpSocket) {
     loop {
-        let mut buff = [0; 10];
+        let mut buff = [0u8; 65536];
         sock.recv_from(&mut buff);
-        debug!("{:?}", buff);
+        debug!("{:?}", &buff[..32]);
     }
 }
