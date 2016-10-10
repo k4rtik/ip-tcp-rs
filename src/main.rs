@@ -1,14 +1,15 @@
-use std::fs::File;
-use std::io::{BufReader, BufRead};
-use std::io;
-use std::net::Ipv4Addr;
-use std::thread;
-
 #[macro_use]
 extern crate log;
 extern crate env_logger;
 extern crate clap;
 extern crate pnet;
+
+use pnet::packet::ipv4::{Ipv4Packet, MutableIpv4Packet};
+use std::cell::RefCell;
+use std::fs::File;
+use std::io::{self, BufReader, BufRead, Write};
+use std::net::Ipv4Addr;
+use std::thread;
 
 use clap::{App, Arg};
 
@@ -73,10 +74,12 @@ fn is_ip(ip_addr: &str) -> bool {
     return true;
 }
 
-fn cli_impl() {
+fn cli_impl(datalink: DataLink) {
     let stdin = io::stdin();
     let cmd = &mut String::new();
     loop {
+        print!("> ");
+        io::stdout().flush().unwrap();
         cmd.clear();
         stdin.read_line(cmd).unwrap();
         let cmd_split = cmd.trim().split(' ');
