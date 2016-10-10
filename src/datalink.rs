@@ -2,6 +2,7 @@ use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::Packet;
 use std::net::Ipv4Addr;
 use std::net::UdpSocket;
+use std::{thread, time};
 
 pub struct RouteInfo {
     // std::net::UdpSocket accepts string in host:port format
@@ -52,6 +53,7 @@ impl DataLink {
                 .collect(),
         }
     }
+
 
     // to be called only by the IP Layer
     pub fn send_packet(&self, next_hop: Ipv4Addr, pkt: Ipv4Packet) -> bool {
@@ -110,5 +112,21 @@ impl DataLink {
             println!("interface {} is already disabled!", id);
             false
         }
+    }
+
+
+    pub fn start_receiver(&self) {
+        let tmp = self.local_socket.try_clone().unwrap();
+        let child = thread::spawn(move || {
+            debug!("Starting reveiver...");
+            recv_data_from_interface(tmp);
+        });
+    }
+}
+pub fn recv_data_from_interface(sock: UdpSocket) {
+    loop {
+        let mut buff = [0; 10];
+        sock.recv_from(&mut buff);
+        debug!("{:?}", buff);
     }
 }

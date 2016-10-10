@@ -157,9 +157,10 @@ fn main() {
 
     let datalink = DataLink::new(ri);
 
-    let child = thread::spawn(move || {
-        println!("Starting node...");
-        cli_impl(datalink);
-    });
-    child.join().unwrap();
+    datalink.start_receiver();
+
+    println!("Starting node...");
+    cli_impl(datalink);
+
+    // child.join().unwrap();
 }
