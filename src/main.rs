@@ -76,73 +76,83 @@ fn is_ip(ip_addr: &str) -> bool {
 }
 
 fn cli_impl(mut datalink: DataLink) {
-    let stdin = io::stdin();
-    let cmd = &mut String::new();
     loop {
         print!("> ");
         io::stdout().flush().unwrap();
-        cmd.clear();
-        stdin.read_line(cmd).unwrap();
-        let cmd_split = cmd.trim().split(' ');
-        let cmd_vec = cmd_split.collect::<Vec<&str>>();
-        match &cmd_vec[0] as &str {
-            "interfaces" => {
-                datalink.show_interfaces();
+
+        let cmd = &mut String::new();
+        match io::stdin().read_line(cmd) {
+            Ok(0) => {
+                info!("EndOfFile sent (Ctrl-D)");
+                break;
             }
-            "routes" => {
-                println!("routes recongnized!");
-            }
-            "down" => {
-                if cmd_vec.len() != 2 {
-                    println!("Missing interface number!");
-                } else {
-                    let tmp = cmd_vec[1].parse::<usize>();
-                    match tmp {
-                        Ok(interface) => {
-                            datalink.deactivate_interface(interface);
+            Ok(_) => {
+                let cmd_split = cmd.trim().split(' ');
+                let cmd_vec = cmd_split.collect::<Vec<&str>>();
+                match &cmd_vec[0] as &str {
+                    "interfaces" => {
+                        datalink.show_interfaces();
+                    }
+                    "routes" => {
+                        println!("routes recongnized!");
+                    }
+                    "down" => {
+                        if cmd_vec.len() != 2 {
+                            println!("Missing interface number!");
+                        } else {
+                            let tmp = cmd_vec[1].parse::<usize>();
+                            match tmp {
+                                Ok(interface) => {
+                                    datalink.deactivate_interface(interface);
+                                }
+                                Err(_) => println!("Please mention the interface number!"),
+                            }
                         }
-                        Err(_) => println!("Please mention the interface number!"),
                     }
-                }
-            }
-            "up" => {
-                if cmd_vec.len() != 2 {
-                    println!("Missing interface number!");
-                } else {
-                    let tmp = cmd_vec[1].parse::<usize>();
-                    match tmp {
-                        Ok(interface) => {
-                            datalink.activate_interface(interface);
+                    "up" => {
+                        if cmd_vec.len() != 2 {
+                            println!("Missing interface number!");
+                        } else {
+                            let tmp = cmd_vec[1].parse::<usize>();
+                            match tmp {
+                                Ok(interface) => {
+                                    datalink.activate_interface(interface);
+                                }
+                                Err(_) => println!("Please mention the interface number!"),
+                            }
                         }
-                        Err(_) => println!("Please mention the interface number!"),
+                    }
+                    "send" => {
+                        if cmd_vec.len() != 4 {
+                            println!("Missing parameters");
+                        } else {
+                            if is_ip(cmd_vec[1]) == false {
+                                println!("IP address is not in format!");
+                            } else {
+                                let dest_ip = cmd_vec[1].parse::<Ipv4Addr>().unwrap();
+                                let proto = cmd_vec[2].parse::<u8>().unwrap();
+                                let string = cmd_vec[3];
+                                let mut payload = string.to_string().into_bytes();
+                                let payload_len = payload.len();
+                                let pkt_buf =
+                                    ip::send_message(dest_ip, &mut payload, payload_len, proto)
+                                        .into_inner();
+                                let pkt = Ipv4Packet::new(&*pkt_buf).unwrap();
+                                datalink.send_packet(dest_ip, pkt);
+                            }
+                        }
+                    }
+                    "shutdown" => {
+                        println!("shutting down node...");
+                        break;
+                    }
+                    _ => {
+                        println!("Invalid command!");
                     }
                 }
             }
-            "send" => {
-                if cmd_vec.len() != 4 {
-                    println!("Missing parameters");
-                } else {
-                    if is_ip(cmd_vec[1]) == false {
-                        println!("IP address is not in format!");
-                    } else {
-                        let dest_ip = cmd_vec[1].parse::<Ipv4Addr>().unwrap();
-                        let proto = cmd_vec[2].parse::<u8>().unwrap();
-                        let string = cmd_vec[3];
-                        let mut payload = string.to_string().into_bytes();
-                        let payload_len = payload.len();
-                        let pkt_buf = ip::send_message(dest_ip, &mut payload, payload_len, proto)
-                            .into_inner();
-                        let pkt = Ipv4Packet::new(&*pkt_buf).unwrap();
-                        datalink.send_packet(dest_ip, pkt);
-                    }
-                }
-            }
-            "shutdown" => {
-                println!("shutting down node...");
-                return;
-            }
-            _ => {
-                println!("Invalid command!");
+            Err(_) => {
+                panic!("Unexpected error reading from stdin");
             }
         }
     }
