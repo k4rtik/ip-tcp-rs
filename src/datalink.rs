@@ -53,23 +53,24 @@ impl DataLink {
         }
     }
 
-    // called by the IP Layer
+    // to be called only by the IP Layer
     pub fn send_packet(&self, next_hop: Ipv4Addr, pkt: Ipv4Packet) -> bool {
         debug!("{:?}, {:?}", next_hop, pkt);
-	// TODO check if the socker_addr has the interface enabled!
-        let socket_addr =
+        let priv_iface =
             match (&self.interfaces).into_iter().find(|ref iface| iface.dst == next_hop) {
-                Some(ref priv_iface) => priv_iface.socket_addr.clone(),
+                Some(priv_iface) => priv_iface,
                 None => panic!("Interface doesn't exist!"),
             };
-        debug!("{:?}", socket_addr);
-        debug!("{:?}", pkt.packet());
-        let sent_count = self.local_socket.send_to(pkt.packet(), &*socket_addr);
-        debug!("{:?}", sent_count);
-        if sent_count.unwrap() > 1 {
-            return true;
+        if priv_iface.enabled {
+            let socket_addr = priv_iface.socket_addr.clone();
+            debug!("{:?}", socket_addr);
+            debug!("{:?}", pkt.packet());
+            let sent_count = self.local_socket.send_to(pkt.packet(), &*socket_addr);
+            debug!("{:?}", sent_count);
+            if sent_count.unwrap() > 0 { true } else { false }
         } else {
-            return false;
+            info!("interface for {:?} is disabled", next_hop);
+            false
         }
     }
 
