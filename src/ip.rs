@@ -8,6 +8,7 @@ use std::net::Ipv4Addr;
 use datalink::DataLink;
 
 static IPV4_HEADER_LEN: usize = 20;
+static TTL: u8 = 16;
 
 // This function is mostly a copy of the same function in libpnet benches at:
 // https://github.com/libpnet/libpnet/blob/master/benches/rs_sender.rs#L27-L44
@@ -24,7 +25,7 @@ pub fn build_ipv4_header(dst: Ipv4Addr,
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(total_len);
-    ip_header.set_ttl(4);
+    ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocol(proto));
     ip_header.set_source(src);
     ip_header.set_destination(dst);
