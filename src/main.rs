@@ -25,7 +25,7 @@ fn parse_lnx(filename: &str) -> RouteInfo {
 
     // TODO validate socket_addr
     let socket_addr = myinfo.trim().to_string();
-
+    let mut _id = 0;
     let interfaces: Vec<_> = file.lines()
         .map(|line| {
             let line = line.unwrap();
@@ -75,7 +75,7 @@ fn is_ip(ip_addr: &str) -> bool {
     return true;
 }
 
-fn cli_impl(datalink: DataLink) {
+fn cli_impl(mut datalink: DataLink) {
     let stdin = io::stdin();
     let cmd = &mut String::new();
     loop {
@@ -87,7 +87,7 @@ fn cli_impl(datalink: DataLink) {
         let cmd_vec = cmd_split.collect::<Vec<&str>>();
         match &cmd_vec[0] as &str {
             "interfaces" => {
-                println!("interfaces recongnized!");
+                datalink.show_interfaces();
             }
             "routes" => {
                 println!("routes recongnized!");
@@ -96,9 +96,11 @@ fn cli_impl(datalink: DataLink) {
                 if cmd_vec.len() != 2 {
                     println!("Missing interface number!");
                 } else {
-                    let tmp = cmd_vec[1].parse::<i32>();
+                    let tmp = cmd_vec[1].parse::<usize>();
                     match tmp {
-                        Ok(interface) => println!("Interface: {}", interface),
+                        Ok(interface) => {
+                            datalink.deactivate_interface(interface);
+                        }
                         Err(_) => println!("Please mention the interface number!"),
                     }
                 }
@@ -107,9 +109,11 @@ fn cli_impl(datalink: DataLink) {
                 if cmd_vec.len() != 2 {
                     println!("Missing interface number!");
                 } else {
-                    let tmp = cmd_vec[1].parse::<i32>();
+                    let tmp = cmd_vec[1].parse::<usize>();
                     match tmp {
-                        Ok(interface) => println!("Interface: {}", interface),
+                        Ok(interface) => {
+                            datalink.activate_interface(interface);
+                        }
                         Err(_) => println!("Please mention the interface number!"),
                     }
                 }

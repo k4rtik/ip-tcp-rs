@@ -54,8 +54,9 @@ impl DataLink {
     }
 
     // called by the IP Layer
-    pub fn send_packet(&self, next_hop: Ipv4Addr, pkt: Ipv4Packet) {
+    pub fn send_packet(&self, next_hop: Ipv4Addr, pkt: Ipv4Packet) -> bool {
         debug!("{:?}, {:?}", next_hop, pkt);
+	// TODO check if the socker_addr has the interface enabled!
         let socket_addr =
             match (&self.interfaces).into_iter().find(|ref iface| iface.dst == next_hop) {
                 Some(ref priv_iface) => priv_iface.socket_addr.clone(),
@@ -65,11 +66,48 @@ impl DataLink {
         debug!("{:?}", pkt.packet());
         let sent_count = self.local_socket.send_to(pkt.packet(), &*socket_addr);
         debug!("{:?}", sent_count);
+        if sent_count.unwrap() > 1 {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+
+    pub fn show_interfaces(&self) {
+        // let ret_vec = Vec<Interface>;
+        println!("id\tsource\t\tdestination\tstatus");
+        let mut idx = 0;
+        for i in &self.interfaces {
+            println!("{}\t{}\t{}\t{}", idx, i.src, i.dst, i.enabled);
+            idx = idx + 1;
+        }
+    }
+
+    pub fn activate_interface(&mut self, id: usize) -> bool {
+        if id > self.interfaces.len() {
+            return false;
+        } else {
+            if self.interfaces[id].enabled == true {
+                println!("interface {} is already enabled!", id);
+                return true;
+            } else {
+                self.interfaces[id].enabled = true;
+                return true;
+            }
+        }
+    }
+    pub fn deactivate_interface(&mut self, id: usize) -> bool {
+        if id > self.interfaces.len() {
+            return false;
+        } else {
+            if self.interfaces[id].enabled == false {
+                println!("interface {} is already disabled!", id);
+                return false;
+            } else {
+                self.interfaces[id].enabled = false;
+                return true;
+            }
+        }
     }
 }
-
-pub fn activate_interface(id: usize) {}
-
-pub fn deactivate_interface(id: usize) {}
-
-pub fn get_interfaces() {}
