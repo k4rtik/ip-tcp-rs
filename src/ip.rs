@@ -7,6 +7,8 @@ use std::net::Ipv4Addr;
 
 static IPV4_HEADER_LEN: usize = 20;
 
+// This function is mostly a copy of the same function in libpnet benches at:
+// https://github.com/libpnet/libpnet/blob/master/benches/rs_sender.rs#L27-L44
 pub fn build_ipv4_header(dest: Ipv4Addr,
                          packet: &mut [u8],
                          proto: u8,
