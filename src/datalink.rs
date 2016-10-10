@@ -1,6 +1,8 @@
 use pnet::packet::ipv4::Ipv4Packet;
-use std::net::UdpSocket;
+use pnet::packet::Packet;
 use std::net::Ipv4Addr;
+use std::net::UdpSocket;
+use std::sync::mpsc::channel;
 
 pub struct RouteInfo {
     // std::net::UdpSocket accepts string in host:port format
@@ -24,7 +26,7 @@ pub struct Interface {
 
 struct PrivInterface {
     socket_addr: String,
-    dst: Ipv4Addr,
+    dst: Ipv4Addr, // also serves as key to this interface
     src: Ipv4Addr,
     enabled: bool,
 }
@@ -51,13 +53,20 @@ impl DataLink {
                 .collect(),
         }
     }
-	
-    //called by the IP Layer
-    pub fn send_packet(&self, dest_addr: Ipv4Addr, proto: i32, pkt: Ipv4Packet) {
-		debug!("{:?}, {:?}, {:?}", dest_addr, proto, pkt);
 
-		//self.local_socket.send_to();
-	}
+    // called by the IP Layer
+    pub fn send_packet(&self, next_hop: Ipv4Addr, pkt: Ipv4Packet) {
+        debug!("{:?}, {:?}", next_hop, pkt);
+        let socket_addr =
+            match (&self.interfaces).into_iter().find(|ref iface| iface.dst == next_hop) {
+                Some(ref priv_iface) => priv_iface.socket_addr.clone(),
+                None => panic!("Interface doesn't exist!"),
+            };
+        debug!("{:?}", socket_addr);
+        debug!("{:?}", pkt.packet());
+        let sent_count = self.local_socket.send_to(pkt.packet(), &*socket_addr);
+        debug!("{:?}", sent_count);
+    }
 }
 
 pub fn activate_interface(id: usize) {}
@@ -65,4 +74,3 @@ pub fn activate_interface(id: usize) {}
 pub fn deactivate_interface(id: usize) {}
 
 pub fn get_interfaces() {}
-
