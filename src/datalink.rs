@@ -1,6 +1,8 @@
-use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::Packet;
+use pnet::packet::ipv4::Ipv4Packet;
+
 use std::cell::Cell;
+use std::sync::mpsc::{self, Sender, Receiver};
 use std::net::Ipv4Addr;
 use std::net::UdpSocket;
 use std::thread;
@@ -64,6 +66,10 @@ impl DataLink {
                 None
             })
             .next()
+    }
+
+    pub fn is_local_address(&self, dst: Ipv4Addr) -> bool {
+        self.interfaces.iter().any(|&iface| iface.src == dst)
     }
 
     // to be called only by the IP Layer

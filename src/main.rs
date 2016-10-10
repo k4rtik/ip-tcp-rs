@@ -16,6 +16,7 @@ mod datalink;
 use datalink::*;
 
 mod ip;
+mod rip;
 
 fn parse_lnx(filename: &str) -> RouteInfo {
     let mut file = BufReader::new(File::open(filename).unwrap());
