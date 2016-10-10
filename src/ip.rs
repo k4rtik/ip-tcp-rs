@@ -1,6 +1,6 @@
 extern crate pnet;
 
-use pnet::packet::ipv4::{self, MutableIpv4Packet, Ipv4Packet};
+use pnet::packet::ipv4::{self, MutableIpv4Packet};
 use pnet::packet::ip::IpNextHeaderProtocol;
 use std::cell::RefCell;
 use std::net::Ipv4Addr;

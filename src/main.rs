@@ -4,8 +4,7 @@ extern crate env_logger;
 extern crate clap;
 extern crate pnet;
 
-use pnet::packet::ipv4::{Ipv4Packet, MutableIpv4Packet};
-use std::cell::RefCell;
+use pnet::packet::ipv4::Ipv4Packet;
 use std::fs::File;
 use std::io::{self, BufReader, BufRead, Write};
 use std::net::Ipv4Addr;
