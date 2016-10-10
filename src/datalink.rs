@@ -18,9 +18,9 @@ pub struct SocketAddrInterface {
 
 #[derive(Debug)]
 pub struct Interface {
-    dst: Ipv4Addr,
-    src: Ipv4Addr,
-    enabled: bool,
+    pub dst: Ipv4Addr,
+    pub src: Ipv4Addr,
+    pub enabled: bool,
 }
 
 struct PrivInterface {
@@ -74,15 +74,17 @@ impl DataLink {
         }
     }
 
-
-    pub fn show_interfaces(&self) {
-        // let ret_vec = Vec<Interface>;
-        println!("id\tsource\t\tdestination\tstatus");
-        let mut idx = 0;
-        for i in &self.interfaces {
-            println!("{}\t{}\t{}\t{}", idx, i.src, i.dst, i.enabled);
-            idx = idx + 1;
-        }
+    pub fn get_interfaces(&self) -> Vec<Interface> {
+        self.interfaces
+            .iter()
+            .map(|iface| {
+                Interface {
+                    dst: iface.dst,
+                    src: iface.src,
+                    enabled: iface.enabled,
+                }
+            })
+            .collect()
     }
 
     pub fn activate_interface(&mut self, id: usize) -> bool {

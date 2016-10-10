@@ -91,7 +91,10 @@ fn cli_impl(mut datalink: DataLink) {
                 let cmd_vec = cmd_split.collect::<Vec<&str>>();
                 match &cmd_vec[0] as &str {
                     "interfaces" => {
-                        datalink.show_interfaces();
+                        println!("id\tsource\t\tdestination\tstatus");
+                        for (i, iface) in datalink.get_interfaces().iter().enumerate() {
+                            println!("{}\t{}\t{}\t{}", i, iface.src, iface.dst, iface.enabled);
+                        }
                     }
                     "routes" => {
                         println!("routes recongnized!");
