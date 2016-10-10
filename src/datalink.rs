@@ -1,5 +1,6 @@
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::Packet;
+use std::cell::Cell;
 use std::net::Ipv4Addr;
 use std::net::UdpSocket;
 use std::{thread, time};
@@ -28,7 +29,7 @@ struct PrivInterface {
     socket_addr: String,
     dst: Ipv4Addr, // also serves as key to this interface
     src: Ipv4Addr,
-    enabled: bool,
+    enabled: Cell<bool>,
 }
 
 pub struct DataLink {
@@ -47,7 +48,7 @@ impl DataLink {
                         socket_addr: iface.to_socket_addr.clone(),
                         dst: iface.dst_vip,
                         src: iface.src_vip,
-                        enabled: true,
+                        enabled: Cell::new(true),
                     }
                 })
                 .collect(),
@@ -72,7 +73,7 @@ impl DataLink {
             Some(priv_iface) => priv_iface,
             None => panic!("Interface doesn't exist!"),
         };
-        if priv_iface.enabled {
+        if priv_iface.enabled.get() {
             let socket_addr = priv_iface.socket_addr.clone();
             debug!("{:?}", socket_addr);
             debug!("{:?}", pkt.packet());
@@ -92,31 +93,31 @@ impl DataLink {
                 Interface {
                     dst: iface.dst,
                     src: iface.src,
-                    enabled: iface.enabled,
+                    enabled: iface.enabled.get(),
                 }
             })
             .collect()
     }
 
-    pub fn activate_interface(&mut self, id: usize) -> bool {
+    pub fn activate_interface(&self, id: usize) -> bool {
         if id > self.interfaces.len() {
             println!("interface {} doesn't exist!", id);
             false
-        } else if self.interfaces[id].enabled {
+        } else if self.interfaces[id].enabled.get() {
             println!("interface {} is already enabled!", id);
             true
         } else {
-            self.interfaces[id].enabled = true;
+            self.interfaces[id].enabled.set(true);
             true
         }
     }
 
-    pub fn deactivate_interface(&mut self, id: usize) -> bool {
+    pub fn deactivate_interface(&self, id: usize) -> bool {
         if id > self.interfaces.len() {
             println!("interface {} doesn't exist!", id);
             false
-        } else if self.interfaces[id].enabled {
-            self.interfaces[id].enabled = false;
+        } else if self.interfaces[id].enabled.get() {
+            self.interfaces[id].enabled.set(false);
             true
         } else {
             println!("interface {} is already disabled!", id);

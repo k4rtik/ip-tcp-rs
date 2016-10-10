@@ -59,7 +59,7 @@ fn is_ip(ip_addr: &str) -> bool {
     }
 }
 
-fn cli_impl(mut datalink: DataLink) {
+fn cli_impl(datalink: &DataLink) {
     loop {
         print!("> ");
         io::stdout().flush().unwrap();
@@ -160,7 +160,7 @@ fn main() {
     datalink.start_receiver();
 
     println!("Starting node...");
-    cli_impl(datalink);
+    cli_impl(&datalink);
 
     // child.join().unwrap();
 }
