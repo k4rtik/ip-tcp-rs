@@ -17,7 +17,7 @@ pub struct SocketAddrInterface {
     pub dst_vip: Ipv4Addr,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Interface {
     pub dst: Ipv4Addr,
     pub src: Ipv4Addr,
@@ -54,6 +54,16 @@ impl DataLink {
         }
     }
 
+    pub fn get_interface_by_dst(&self, dst: Ipv4Addr) -> Option<Interface> {
+        self.get_interfaces()
+            .iter()
+            .filter_map(|iface| if iface.dst == dst {
+                Some((*iface).clone())
+            } else {
+                None
+            })
+            .next()
+    }
 
     // to be called only by the IP Layer
     pub fn send_packet(&self, next_hop: Ipv4Addr, pkt: Ipv4Packet) -> bool {
