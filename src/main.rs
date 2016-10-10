@@ -16,6 +16,8 @@ use clap::{App, Arg};
 mod datalink;
 use datalink::*;
 
+mod ip;
+
 fn parse_lnx(filename: &str) -> RouteInfo {
     let mut file = BufReader::new(File::open(filename).unwrap());
 
@@ -119,13 +121,17 @@ fn cli_impl(datalink: DataLink) {
                 } else {
                     if is_ip(cmd_vec[1]) == false {
                         println!("IP address is not in format!");
+                    } else {
+                        let dest_ip = cmd_vec[1].parse::<Ipv4Addr>().unwrap();
+                        let proto = cmd_vec[2].parse::<u8>().unwrap();
+                        let string = cmd_vec[3];
+                        let mut payload = string.to_string().into_bytes();
+                        let payload_len = payload.len();
+                        let pkt_buf = ip::send_message(dest_ip, &mut payload, payload_len, proto)
+                            .into_inner();
+                        let pkt = Ipv4Packet::new(&*pkt_buf).unwrap();
+                        datalink.send_packet(dest_ip, pkt);
                     }
-		    else {
-			    	let dest_ip = cmd_vec[1].parse::<Ipv4Addr>().unwrap();
-				let proto = cmd_vec[2].parse::<i32>().unwrap();
-				let string = cmd_vec[3].to_string();
-				//.send_packet(dest_ip, proto, string);
-			}
                 }
             }
             "shutdown" => {
