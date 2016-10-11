@@ -16,12 +16,12 @@ static TTL: u8 = 16;
 
 // This function is mostly a copy of the same function in libpnet benches at:
 // https://github.com/libpnet/libpnet/blob/master/benches/rs_sender.rs#L27-L44
-pub fn build_ipv4_header(dst: Ipv4Addr,
-                         src: Ipv4Addr,
-                         packet: &mut [u8],
-                         proto: u8,
-                         option_len: usize,
-                         payload_len: usize) {
+fn build_ipv4_header(dst: Ipv4Addr,
+                     src: Ipv4Addr,
+                     packet: &mut [u8],
+                     proto: u8,
+                     option_len: usize,
+                     payload_len: usize) {
     let mut ip_header = MutableIpv4Packet::new(packet).unwrap();
 
     let total_len = (IPV4_HEADER_LEN + option_len + payload_len) as u16;
