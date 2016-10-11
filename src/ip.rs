@@ -73,7 +73,7 @@ fn handle_packet(datalink: &DataLink, pkt: Ipv4Packet) {
         } else {
             // TODO decrease TTL
             let next_hop = rip::get_next_hop(dst);
-            datalink.send_packet(next_hop, pkt);
+            datalink.send_packet(next_hop, pkt).unwrap();
         }
     } else {
         error!("Invalid packet, discarding");
