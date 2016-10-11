@@ -6,9 +6,7 @@ use pnet::packet::ipv4::{self, MutableIpv4Packet, Ipv4Packet};
 
 use std::cell::RefCell;
 use std::net::Ipv4Addr;
-use std::sync::Arc;
 use std::sync::mpsc::Receiver;
-use std::thread;
 
 use datalink::DataLink;
 use rip;
@@ -75,7 +73,7 @@ fn handle_packet(datalink: &DataLink, pkt: Ipv4Packet) {
         } else {
             // TODO decrease TTL
             let next_hop = rip::get_next_hop(dst);
-            datalink.send_packet(dst, pkt);
+            datalink.send_packet(next_hop, pkt);
         }
     } else {
         error!("Invalid packet, discarding");

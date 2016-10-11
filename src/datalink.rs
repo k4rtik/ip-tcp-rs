@@ -1,8 +1,6 @@
 use pnet::packet::Packet;
 use pnet::packet::ipv4::Ipv4Packet;
 
-use std::borrow::Borrow;
-use std::cell::Cell;
 use std::sync::{Arc, RwLock};
 use std::sync::mpsc::{self, Sender, Receiver};
 use std::net::Ipv4Addr;
@@ -74,7 +72,7 @@ impl DataLink {
     }
 
     pub fn is_local_address(&self, dst: Ipv4Addr) -> bool {
-        self.interfaces.iter().any(|ref iface| iface.src == dst)
+        self.interfaces.iter().any(|iface| iface.src == dst)
     }
 
     // to be called only by the IP Layer
@@ -150,9 +148,9 @@ static mut buf: [u8; 65536] = [0; 65536];
 
 pub unsafe fn recv_loop(sock: UdpSocket, tx: Sender<Ipv4Packet>) {
     loop {
-        sock.recv_from(&mut buf);
+        sock.recv_from(&mut buf).unwrap();
         debug!("{:?}", &buf[..32]);
         let pkt = Ipv4Packet::new(&buf).unwrap();
-        tx.send(pkt);
+        tx.send(pkt).unwrap();
     }
 }

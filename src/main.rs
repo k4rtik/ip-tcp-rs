@@ -11,7 +11,6 @@ use std::fs::File;
 use std::io::{self, BufReader, BufRead, Write};
 use std::net::Ipv4Addr;
 use std::str::FromStr;
-use std::thread;
 
 mod datalink;
 use datalink::*;
