@@ -3,8 +3,7 @@ use pnet::packet::ipv4::Ipv4Packet;
 
 use std::sync::{Arc, RwLock};
 use std::sync::mpsc::{self, Sender, Receiver};
-use std::net::Ipv4Addr;
-use std::net::UdpSocket;
+use std::net::{Ipv4Addr, UdpSocket};
 use std::thread;
 
 pub struct RouteInfo {
@@ -42,13 +41,26 @@ pub struct DataLink {
 impl DataLink {
     pub fn new(ri: RouteInfo) -> (DataLink, Receiver<Ipv4Packet<'static>>) {
         let (tx, rx): (Sender<Ipv4Packet>, Receiver<Ipv4Packet>) = mpsc::channel();
+        let socket_addr: Vec<&str> = ri.socket_addr.split(':').collect();
+        let host = match socket_addr[0] {
+            "localhost" => "127.0.0.1",
+            x => x,
+        };
+        let port: u16 = socket_addr[1].parse().unwrap();
         let dl = DataLink {
-            local_socket: UdpSocket::bind(&*ri.socket_addr).unwrap(),
+            local_socket: UdpSocket::bind((host, port)).unwrap(),
             interfaces: ri.interfaces
                 .iter()
                 .map(|iface| {
                     PrivInterface {
-                        socket_addr: iface.to_socket_addr.clone(),
+                        socket_addr: {
+                            let socket_addr: Vec<&str> = iface.to_socket_addr.split(':').collect();
+                            let host = match socket_addr[0] {
+                                "localhost" => "127.0.0.1",
+                                x => x,
+                            };
+                            host.to_string() + ":" + socket_addr[1]
+                        },
                         dst: iface.dst_vip,
                         src: iface.src_vip,
                         enabled: Arc::new(RwLock::new(true)),
@@ -112,7 +124,7 @@ impl DataLink {
     }
 
     pub fn activate_interface(&self, id: usize) -> bool {
-        if id > self.interfaces.len() {
+        if id >= self.interfaces.len() {
             println!("interface {} doesn't exist!", id);
             false
         } else if *self.interfaces[id].enabled.read().unwrap() {
@@ -126,7 +138,7 @@ impl DataLink {
     }
 
     pub fn deactivate_interface(&self, id: usize) -> bool {
-        if id > self.interfaces.len() {
+        if id >= self.interfaces.len() {
             println!("interface {} doesn't exist!", id);
             false
         } else if *self.interfaces[id].enabled.read().unwrap() {
@@ -152,7 +164,6 @@ static mut buf: [u8; 65536] = [0; 65536];
 pub unsafe fn recv_loop(sock: UdpSocket, tx: Sender<Ipv4Packet>) {
     loop {
         sock.recv_from(&mut buf).unwrap();
-        debug!("{:?}", &buf[..32]);
         let pkt = Ipv4Packet::new(&buf).unwrap();
         tx.send(pkt).unwrap();
     }

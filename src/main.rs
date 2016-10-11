@@ -74,9 +74,9 @@ fn cli_impl(datalink: &DataLink) {
                 let cmd_vec = cmd_split.collect::<Vec<&str>>();
                 match cmd_vec[0] {
                     "interfaces" => {
-                        println!("id\tsource\t\tdestination\tstatus");
+                        println!("id\tdst\t\tsrc\t\tenabled");
                         for (i, iface) in datalink.get_interfaces().iter().enumerate() {
-                            println!("{}\t{}\t{}\t{}", i, iface.src, iface.dst, iface.enabled);
+                            println!("{}\t{}\t{}\t{}", i, iface.dst, iface.src, iface.enabled);
                         }
                     }
                     "routes" => {
@@ -119,13 +119,13 @@ fn cli_impl(datalink: &DataLink) {
                             let string = cmd_vec[3];
                             let message = string.to_string().into_bytes();
                             let ip_params = ip::IpParams {
-                                src: "localhost".parse::<Ipv4Addr>().unwrap(),
+                                src: Ipv4Addr::new(127, 0, 0, 1),
                                 dst: dest_ip,
                                 len: message.len(),
                                 tos: 0,
                                 opt: vec![],
                             };
-                            let res = ip::send(datalink, ip_params, proto, 16, message, 0, false);
+                            let res = ip::send(datalink, ip_params, proto, 16, message, 0, true);
                             match res {
                                 Ok(_) => info!("Message sent succesfully"),
                                 Err(str) => error!("{}", str),
@@ -136,8 +136,18 @@ fn cli_impl(datalink: &DataLink) {
                         println!("shutting down node...");
                         break;
                     }
+                    "help" => {
+                        println!("Commands:
+up <id>                         - enable interface with id
+down <id>                       - disable interface with id
+send <dst_ip> <prot> <payload>  - send ip packet to <dst_ip> using prot <prot>
+interfaces                      - list interfaces
+routes                          - list routing table rows
+help                            - show this help");
+                    }
+                    "" => {}
                     _ => {
-                        println!("Invalid command!");
+                        println!("invalid command, see \"help\"");
                     }
                 }
             }
@@ -161,7 +171,7 @@ fn main() {
     let ri = parse_lnx(&lnx_file);
 
     let (datalink, rx) = DataLink::new(ri);
-    ip::start_ip_module(&datalink, rx);
+    //    ip::start_ip_module(&datalink, rx);
 
     // TODO need to remove dependency of passing datalink to cli (to spawn a separate thread)
     println!("Starting node...");
