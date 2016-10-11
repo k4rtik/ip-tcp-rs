@@ -117,16 +117,18 @@ fn cli_impl(datalink: &DataLink) {
                             let dest_ip = cmd_vec[1].parse::<Ipv4Addr>().unwrap();
                             let proto = cmd_vec[2].parse::<u8>().unwrap();
                             let string = cmd_vec[3];
-                            let mut payload = string.to_string().into_bytes();
-                            let payload_len = payload.len();
-                            if ip::send_message(datalink,
-                                                dest_ip,
-                                                &mut payload,
-                                                payload_len,
-                                                proto) {
-                                info!("Message sent succesfully");
-                            } else {
-                                error!("Message sending failed!");
+                            let message = string.to_string().into_bytes();
+                            let ip_params = ip::IpParams {
+                                src: "localhost".parse::<Ipv4Addr>().unwrap(),
+                                dst: dest_ip,
+                                len: message.len(),
+                                tos: 0,
+                                opt: vec![],
+                            };
+                            let res = ip::send(datalink, ip_params, proto, 16, message, 0, false);
+                            match res {
+                                Ok(_) => info!("Message sent succesfully"),
+                                Err(str) => error!("{}", str),
                             }
                         }
                     }
