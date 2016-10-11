@@ -61,14 +61,13 @@ pub fn send(datalink: &DataLink,
     debug!("{:?}", pkt_buf);
 
     let params = IpParams {
-        src: match params.src.is_loopback() {
-            true => {
-                match datalink.get_interface_by_dst(params.dst) {
-                    Some(iface) => iface.src,
-                    None => return Err("No interface matching dst found!".to_string()),
-                }
+        src: if params.src.is_loopback() {
+            match datalink.get_interface_by_dst(params.dst) {
+                Some(iface) => iface.src,
+                None => return Err("No interface matching dst found!".to_string()),
             }
-            _ => params.src,
+        } else {
+            params.src
         },
         ..params
     };
