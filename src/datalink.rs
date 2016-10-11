@@ -1,7 +1,9 @@
 use pnet::packet::Packet;
 use pnet::packet::ipv4::Ipv4Packet;
 
+use std::borrow::Borrow;
 use std::cell::Cell;
+use std::sync::{Arc, RwLock};
 use std::sync::mpsc::{self, Sender, Receiver};
 use std::net::Ipv4Addr;
 use std::net::UdpSocket;
@@ -31,7 +33,7 @@ struct PrivInterface {
     socket_addr: String,
     dst: Ipv4Addr, // also serves as key to this interface
     src: Ipv4Addr,
-    enabled: Cell<bool>,
+    enabled: Arc<RwLock<bool>>,
 }
 
 pub struct DataLink {
@@ -40,8 +42,9 @@ pub struct DataLink {
 }
 
 impl DataLink {
-    pub fn new(ri: RouteInfo) -> DataLink {
-        DataLink {
+    pub fn new(ri: RouteInfo) -> (DataLink, Receiver<Ipv4Packet<'static>>) {
+        let (tx, rx): (Sender<Ipv4Packet>, Receiver<Ipv4Packet>) = mpsc::channel();
+        let dl = DataLink {
             local_socket: UdpSocket::bind(&*ri.socket_addr).unwrap(),
             interfaces: ri.interfaces
                 .iter()
@@ -50,11 +53,13 @@ impl DataLink {
                         socket_addr: iface.to_socket_addr.clone(),
                         dst: iface.dst_vip,
                         src: iface.src_vip,
-                        enabled: Cell::new(true),
+                        enabled: Arc::new(RwLock::new(true)),
                     }
                 })
                 .collect(),
-        }
+        };
+        dl.start_receiver(tx);
+        (dl, rx)
     }
 
     pub fn get_interface_by_dst(&self, dst: Ipv4Addr) -> Option<Interface> {
@@ -69,7 +74,7 @@ impl DataLink {
     }
 
     pub fn is_local_address(&self, dst: Ipv4Addr) -> bool {
-        self.interfaces.iter().any(|&iface| iface.src == dst)
+        self.interfaces.iter().any(|ref iface| iface.src == dst)
     }
 
     // to be called only by the IP Layer
@@ -79,7 +84,7 @@ impl DataLink {
             Some(priv_iface) => priv_iface,
             None => panic!("Interface doesn't exist!"),
         };
-        if priv_iface.enabled.get() {
+        if *priv_iface.enabled.read().unwrap() {
             let socket_addr = priv_iface.socket_addr.clone();
             debug!("{:?}", socket_addr);
             debug!("{:?}", pkt.packet());
@@ -99,7 +104,7 @@ impl DataLink {
                 Interface {
                     dst: iface.dst,
                     src: iface.src,
-                    enabled: iface.enabled.get(),
+                    enabled: *iface.enabled.read().unwrap(),
                 }
             })
             .collect()
@@ -109,11 +114,12 @@ impl DataLink {
         if id > self.interfaces.len() {
             println!("interface {} doesn't exist!", id);
             false
-        } else if self.interfaces[id].enabled.get() {
+        } else if *self.interfaces[id].enabled.read().unwrap() {
             println!("interface {} is already enabled!", id);
             true
         } else {
-            self.interfaces[id].enabled.set(true);
+            let mut e = self.interfaces[id].enabled.write().unwrap();
+            *e = true;
             true
         }
     }
@@ -122,8 +128,9 @@ impl DataLink {
         if id > self.interfaces.len() {
             println!("interface {} doesn't exist!", id);
             false
-        } else if self.interfaces[id].enabled.get() {
-            self.interfaces[id].enabled.set(false);
+        } else if *self.interfaces[id].enabled.read().unwrap() {
+            let mut e = self.interfaces[id].enabled.write().unwrap();
+            *e = false;
             true
         } else {
             println!("interface {} is already disabled!", id);
@@ -131,19 +138,21 @@ impl DataLink {
         }
     }
 
-
-    pub fn start_receiver(&self) {
-        let tmp = self.local_socket.try_clone().unwrap();
-        thread::spawn(move || {
-            debug!("Starting reveiver...");
-            recv_data_from_interface(tmp);
-        });
+    pub fn start_receiver(&self, tx: Sender<Ipv4Packet<'static>>) {
+        let sock = self.local_socket.try_clone().unwrap();
+        unsafe {
+            thread::spawn(move || recv_loop(sock, tx));
+        }
     }
 }
-pub fn recv_data_from_interface(sock: UdpSocket) {
+
+static mut buf: [u8; 65536] = [0; 65536];
+
+pub unsafe fn recv_loop(sock: UdpSocket, tx: Sender<Ipv4Packet>) {
     loop {
-        let mut buff = [0u8; 65536];
-        sock.recv_from(&mut buff);
-        debug!("{:?}", &buff[..32]);
+        sock.recv_from(&mut buf);
+        debug!("{:?}", &buf[..32]);
+        let pkt = Ipv4Packet::new(&buf).unwrap();
+        tx.send(pkt);
     }
 }

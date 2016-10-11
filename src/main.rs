@@ -11,6 +11,7 @@ use std::fs::File;
 use std::io::{self, BufReader, BufRead, Write};
 use std::net::Ipv4Addr;
 use std::str::FromStr;
+use std::thread;
 
 mod datalink;
 use datalink::*;
@@ -158,10 +159,10 @@ fn main() {
 
     let ri = parse_lnx(&lnx_file);
 
-    let datalink = DataLink::new(ri);
+    let (datalink, rx) = DataLink::new(ri);
+    ip::start_ip_module(&datalink, rx);
 
-    datalink.start_receiver();
-
+    // TODO need to remove dependency of passing datalink to cli (to spawn a separate thread)
     println!("Starting node...");
     cli_impl(&datalink);
 }

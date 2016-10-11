@@ -6,6 +6,7 @@ use pnet::packet::ipv4::{self, MutableIpv4Packet, Ipv4Packet};
 
 use std::cell::RefCell;
 use std::net::Ipv4Addr;
+use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 use std::thread;
 
@@ -59,4 +60,31 @@ pub fn send_message(datalink: &DataLink,
     let buf = buf_rc.into_inner();
     let pkt = Ipv4Packet::new(&buf).unwrap();
     datalink.send_packet(dst, pkt)
+}
+
+fn handle_packet(datalink: &DataLink, pkt: Ipv4Packet) {
+    // TODO check for fragmentation
+    if pkt.get_checksum() == ipv4::checksum(&pkt.to_immutable()) {
+        let dst = pkt.get_destination();
+        if datalink.is_local_address(dst) {
+            match pkt.get_next_level_protocol() {
+                IpNextHeaderProtocol(0) => println!("{:?}", pkt),
+                IpNextHeaderProtocol(200) => rip::handler(pkt.payload()),
+                _ => info!("Unsupported packet!"),
+            }
+        } else {
+            // TODO decrease TTL
+            let next_hop = rip::get_next_hop(dst);
+            datalink.send_packet(dst, pkt);
+        }
+    } else {
+        error!("Invalid packet, discarding");
+    }
+}
+
+pub fn start_ip_module(datalink: &DataLink, rx: Receiver<Ipv4Packet>) {
+    loop {
+        let pkt = rx.recv().unwrap();
+        handle_packet(datalink, pkt);
+    }
 }
