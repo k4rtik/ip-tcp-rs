@@ -115,7 +115,6 @@ pub fn start_ip_module(dl_ctx: &Arc<RwLock<DataLink>>, rx: Receiver<Ipv4Packet>)
 }
 }
 fn print_pkt_contents(pkt: Ipv4Packet) {
-	
 	println!("Packet contents:");
 	println!("Source IP: {}", pkt.get_source());
 	println!("Destination IP: {}", pkt.get_destination());
@@ -123,5 +122,4 @@ fn print_pkt_contents(pkt: Ipv4Packet) {
 	println!("Header:");
 	println!("\ttos: 0\n\tid: {}\n\tproto: 0", pkt.get_identification());
 	//println!("Payload: {}", str::from_utf8(pkt.payload()).unwrap());
-	
 }
