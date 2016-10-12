@@ -5,6 +5,7 @@ use pnet::packet::ip::IpNextHeaderProtocol;
 use pnet::packet::ipv4::{self, MutableIpv4Packet, Ipv4Packet, Ipv4Option};
 
 use std::net::Ipv4Addr;
+use std::sync::{Arc, RwLock};
 use std::sync::mpsc::Receiver;
 
 use datalink::DataLink;
@@ -45,7 +46,7 @@ fn build_ipv4_header(params: &IpParams, prot: u8, ttl: u8, id: u16, packet: &mut
 }
 
 /// conforms to SEND interface described in RFC 791 pg. 32
-pub fn send(datalink: &DataLink,
+pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
             params: IpParams,
             prot: u8,
             ttl: u8,
@@ -62,7 +63,7 @@ pub fn send(datalink: &DataLink,
 
     let params = IpParams {
         src: if params.src.is_loopback() {
-            match datalink.get_interface_by_dst(params.dst) {
+            match (*dl_ctx.read().unwrap()).get_interface_by_dst(params.dst) {
                 Some(iface) => iface.src,
                 None => return Err("No interface matching dst found!".to_string()),
             }
@@ -75,7 +76,7 @@ pub fn send(datalink: &DataLink,
 
     build_ipv4_header(&params, prot, ttl, id, &mut pkt_buf);
     let pkt = Ipv4Packet::new(&pkt_buf).unwrap();
-    datalink.send_packet(params.dst, pkt)
+    (*dl_ctx.read().unwrap()).send_packet(params.dst, pkt)
 }
 
 /// conforms to RECV interface described in RFC 791 pg. 32
@@ -83,11 +84,11 @@ pub fn recv(mut buf: &mut Vec<u8>, prot: u8) -> Result<IpParams, String> {
     Err("Nothing here".to_string())
 }
 
-fn handle_packet(datalink: &DataLink, pkt: Ipv4Packet) {
+fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>, pkt: Ipv4Packet) {
     // TODO check for fragmentation
     if pkt.get_checksum() == ipv4::checksum(&pkt.to_immutable()) {
         let dst = pkt.get_destination();
-        if datalink.is_local_address(dst) {
+        if (*dl_ctx.read().unwrap()).is_local_address(dst) {
             match pkt.get_next_level_protocol() {
                 IpNextHeaderProtocol(0) => println!("{:?}", pkt),
                 IpNextHeaderProtocol(200) => rip::handler(pkt.payload()),
@@ -96,16 +97,17 @@ fn handle_packet(datalink: &DataLink, pkt: Ipv4Packet) {
         } else {
             // TODO decrease TTL
             let next_hop = rip::get_next_hop(dst);
-            datalink.send_packet(next_hop, pkt).unwrap();
+            (*dl_ctx.read().unwrap()).send_packet(next_hop, pkt).unwrap();
         }
     } else {
         error!("Invalid packet, discarding");
     }
 }
 
-pub fn start_ip_module(datalink: &DataLink, rx: Receiver<Ipv4Packet>) {
+pub fn start_ip_module(dl_ctx: &Arc<RwLock<DataLink>>, rx: Receiver<Ipv4Packet>) {
     loop {
         let pkt = rx.recv().unwrap();
-        handle_packet(datalink, pkt);
+        debug!("{:?}", pkt);
+        handle_packet(dl_ctx, pkt);
     }
 }

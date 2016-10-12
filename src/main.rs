@@ -11,6 +11,8 @@ use std::fs::File;
 use std::io::{self, BufReader, BufRead, Write};
 use std::net::Ipv4Addr;
 use std::str::FromStr;
+use std::sync::{Arc, RwLock};
+use std::thread;
 
 mod datalink;
 use datalink::*;
@@ -58,7 +60,7 @@ fn is_ip(ip_addr: &str) -> bool {
     }
 }
 
-fn cli_impl(datalink: &DataLink) {
+fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>) {
     loop {
         print!("> ");
         io::stdout().flush().unwrap();
@@ -75,7 +77,8 @@ fn cli_impl(datalink: &DataLink) {
                 match cmd_vec[0] {
                     "interfaces" => {
                         println!("id\tdst\t\tsrc\t\tenabled");
-                        for (i, iface) in datalink.get_interfaces().iter().enumerate() {
+                        let interfaces = (*dl_ctx.read().unwrap()).get_interfaces();
+                        for (i, iface) in interfaces.iter().enumerate() {
                             println!("{}\t{}\t{}\t{}", i, iface.dst, iface.src, iface.enabled);
                         }
                     }
@@ -89,7 +92,7 @@ fn cli_impl(datalink: &DataLink) {
                             let tmp = cmd_vec[1].parse::<usize>();
                             match tmp {
                                 Ok(interface) => {
-                                    datalink.deactivate_interface(interface);
+                                    (*dl_ctx.read().unwrap()).deactivate_interface(interface);
                                 }
                                 Err(_) => println!("Please mention the interface number!"),
                             }
@@ -102,7 +105,7 @@ fn cli_impl(datalink: &DataLink) {
                             let tmp = cmd_vec[1].parse::<usize>();
                             match tmp {
                                 Ok(interface) => {
-                                    datalink.activate_interface(interface);
+                                    (*dl_ctx.read().unwrap()).activate_interface(interface);
                                 }
                                 Err(_) => println!("Please mention the interface number!"),
                             }
@@ -125,7 +128,7 @@ fn cli_impl(datalink: &DataLink) {
                                 tos: 0,
                                 opt: vec![],
                             };
-                            let res = ip::send(datalink, ip_params, proto, 16, message, 0, true);
+                            let res = ip::send(&dl_ctx, ip_params, proto, 16, message, 0, true);
                             match res {
                                 Ok(_) => info!("Message sent succesfully"),
                                 Err(str) => error!("{}", str),
@@ -171,9 +174,11 @@ fn main() {
     let ri = parse_lnx(&lnx_file);
 
     let (datalink, rx) = DataLink::new(ri);
-    //    ip::start_ip_module(&datalink, rx);
+    let dl_ctx = Arc::new(RwLock::new(datalink));
 
-    // TODO need to remove dependency of passing datalink to cli (to spawn a separate thread)
+    let dl_ctx_clone = dl_ctx.clone();
     println!("Starting node...");
-    cli_impl(&datalink);
+    let cli = thread::spawn(move || cli_impl(dl_ctx_clone));
+
+    ip::start_ip_module(&dl_ctx, rx);
 }
