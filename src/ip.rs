@@ -40,7 +40,8 @@ fn build_ipv4_header(params: &IpParams, prot: u8, ttl: u8, id: u16, packet: &mut
     ip_header.set_next_level_protocol(IpNextHeaderProtocol(prot));
     ip_header.set_source(params.src);
     ip_header.set_destination(params.dst);
-    // ip_header.set_options(params.opt); // if set, total_len needs update with padding
+    // if set, total_len needs update with padding
+    //  ip_header.set_options(params.opt);
 
     let checksum = ipv4::checksum(&ip_header.to_immutable());
     ip_header.set_checksum(checksum);
