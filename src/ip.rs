@@ -61,23 +61,29 @@ pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
     let mut pkt_buf = vec![0u8; IPV4_HEADER_LEN];
     pkt_buf.append(&mut payload);
     debug!("{:?}", pkt_buf);
+    if (*dl_ctx.read().unwrap()).is_local_address(params.dst) {
+        build_ipv4_header(&params, prot, ttl, id, &mut pkt_buf);
+        let pkt = Ipv4Packet::new(&pkt_buf).unwrap();
+        handle_packet(dl_ctx, pkt);
+        Ok(())
+    } else {
+        let params = IpParams {
+            src: if params.src.is_loopback() {
+                match (*dl_ctx.read().unwrap()).get_interface_by_dst(params.dst) {
+                    Some(iface) => iface.src,
+                    None => return Err("No interface matching dst found!".to_string()),
+                }
+            } else {
+                params.src
+            },
+            ..params
+        };
+        debug!{"{:?}", params};
 
-    let params = IpParams {
-        src: if params.src.is_loopback() {
-            match (*dl_ctx.read().unwrap()).get_interface_by_dst(params.dst) {
-                Some(iface) => iface.src,
-                None => return Err("No interface matching dst found!".to_string()),
-            }
-        } else {
-            params.src
-        },
-        ..params
-    };
-    debug!{"{:?}", params};
-
-    build_ipv4_header(&params, prot, ttl, id, &mut pkt_buf);
-    let pkt = Ipv4Packet::new(&pkt_buf).unwrap();
-    (*dl_ctx.read().unwrap()).send_packet(params.dst, pkt)
+        build_ipv4_header(&params, prot, ttl, id, &mut pkt_buf);
+        let pkt = Ipv4Packet::new(&pkt_buf).unwrap();
+        (*dl_ctx.read().unwrap()).send_packet(params.dst, pkt)
+    }
 }
 
 /// conforms to RECV interface described in RFC 791 pg. 32
@@ -92,8 +98,8 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>, pkt: Ipv4Packet) {
         if (*dl_ctx.read().unwrap()).is_local_address(dst) {
             match pkt.get_next_level_protocol() {
                 IpNextHeaderProtocol(0) => {
-			print_pkt_contents(pkt);
-		}
+                    print_pkt_contents(pkt);
+                }
                 IpNextHeaderProtocol(200) => rip::handler(pkt.payload()),
                 _ => info!("Unsupported packet!"),
             }
@@ -112,14 +118,14 @@ pub fn start_ip_module(dl_ctx: &Arc<RwLock<DataLink>>, rx: Receiver<Ipv4Packet>)
     loop {
         let pkt = rx.recv().unwrap();
         handle_packet(dl_ctx, pkt);
-}
+    }
 }
 fn print_pkt_contents(pkt: Ipv4Packet) {
-	println!("Packet contents:");
-	println!("Source IP: {}", pkt.get_source());
-	println!("Destination IP: {}", pkt.get_destination());
-	println!("Body length: {}", pkt.get_total_length());
-	println!("Header:");
-	println!("\ttos: 0\n\tid: {}\n\tproto: 0", pkt.get_identification());
-	//println!("Payload: {}", str::from_utf8(pkt.payload()).unwrap());
+    println!("Packet contents:");
+    println!("Source IP: {}", pkt.get_source());
+    println!("Destination IP: {}", pkt.get_destination());
+    println!("Body length: {}", pkt.get_total_length());
+    println!("Header:");
+    println!("\ttos: 0\n\tid: {}\n\tproto: 0", pkt.get_identification());
+    println!("Payload: {}", str::from_utf8(pkt.payload()).unwrap());
 }
