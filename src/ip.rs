@@ -98,6 +98,7 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>, pkt: Ipv4Packet) {
                 _ => info!("Unsupported packet!"),
             }
         } else {
+            info!("Forwarding to next hop");
             // TODO decrease TTL
             let next_hop = rip::get_next_hop(dst);
             (*dl_ctx.read().unwrap()).send_packet(next_hop, pkt).unwrap();
@@ -110,7 +111,6 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>, pkt: Ipv4Packet) {
 pub fn start_ip_module(dl_ctx: &Arc<RwLock<DataLink>>, rx: Receiver<Ipv4Packet>) {
     loop {
         let pkt = rx.recv().unwrap();
-        debug!("{:?}", pkt);
         handle_packet(dl_ctx, pkt);
 }
 }
