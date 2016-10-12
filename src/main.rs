@@ -159,6 +159,8 @@ help                            - show this help");
             }
         }
     }
+    info!("CLI loop exited");
+    std::process::exit(0);
 }
 
 fn main() {
