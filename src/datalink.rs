@@ -6,6 +6,7 @@ use std::sync::mpsc::{self, Sender, Receiver};
 use std::net::{Ipv4Addr, UdpSocket};
 use std::thread;
 
+// TODO choose a better name for this struct
 pub struct RouteInfo {
     // std::net::UdpSocket accepts string in host:port format
     pub socket_addr: String,

@@ -146,10 +146,6 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>) {
                             }
                         }
                     }
-                    "shutdown" => {
-                        println!("shutting down node...");
-                        break;
-                    }
                     "help" => {
                         println!("Commands:
 up <id>                         - enable interface with id
