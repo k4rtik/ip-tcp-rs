@@ -21,7 +21,9 @@ mod datalink;
 use datalink::*;
 
 mod ip;
+
 mod rip;
+use rip::RipCtx;
 
 fn parse_lnx(filename: &str) -> RouteInfo {
     let mut file = BufReader::new(File::open(filename).unwrap());
@@ -63,7 +65,7 @@ fn is_ip(ip_addr: &str) -> bool {
     }
 }
 
-fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>) {
+fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
     loop {
         print!("> ");
         io::stdout().flush().unwrap();
@@ -182,12 +184,15 @@ fn main() {
 
     let ri = parse_lnx(&lnx_file);
 
-    let (datalink, rx) = DataLink::new(ri);
+    let (datalink, rx) = DataLink::new(&ri);
     let dl_ctx = Arc::new(RwLock::new(datalink));
 
+    let rip_ctx = Arc::new(RwLock::new(RipCtx::new(&ri)));
+
     let dl_ctx_clone = dl_ctx.clone();
+    let rip_ctx_clone = rip_ctx.clone();
     println!("Starting node...");
-    thread::spawn(move || cli_impl(dl_ctx_clone));
+    thread::spawn(move || cli_impl(dl_ctx_clone, rip_ctx_clone));
 
     ip::start_ip_module(&dl_ctx, rx);
 }

@@ -40,7 +40,7 @@ pub struct DataLink {
 }
 
 impl DataLink {
-    pub fn new(ri: RouteInfo) -> (DataLink, Receiver<Ipv4Packet<'static>>) {
+    pub fn new(ri: &RouteInfo) -> (DataLink, Receiver<Ipv4Packet<'static>>) {
         let (tx, rx): (Sender<Ipv4Packet>, Receiver<Ipv4Packet>) = mpsc::channel();
         let socket_addr: Vec<&str> = ri.socket_addr.split(':').collect();
         let host = match socket_addr[0] {

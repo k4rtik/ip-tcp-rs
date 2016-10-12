@@ -1,14 +1,11 @@
-
-use std::net::Ipv4Addr;
-use std::time::Duration;
+use datalink::RouteInfo;
 
 use pnet_macros_support::types::*;
 
-use datalink::{Interface, RouteInfo};
+use std::net::Ipv4Addr;
+use std::time::{Duration, SystemTime};
 
-pub fn handler(rip_pkt: &[u8]) {
-    debug!{"{:?}", &rip_pkt[..20]};
-}
+pub fn handler(rip_pkt: &[u8]) {}
 
 pub fn get_next_hop(dst: Ipv4Addr) -> Ipv4Addr {
     dst
@@ -24,9 +21,9 @@ pub struct Route {
 struct RouteEntry {
     dst: Ipv4Addr,
     next_hop: Ipv4Addr,
-    interface: Interface, // which physical interface for this route
+    // interface: Interface, // which physical interface for this route
     metric: u8, // max 16, TODO create a new type
-    timer: Duration, // since last updated
+    timer: SystemTime, // since last updated
     route_src: Ipv4Addr, // gateway that provided this route
     route_changed: bool,
 }
@@ -54,8 +51,22 @@ pub struct RipCtx {
 }
 
 impl RipCtx {
-    pub fn new(ri: RouteInfo) -> RipCtx {
-        RipCtx { routing_table: Vec::new() }
+    pub fn new(ri: &RouteInfo) -> RipCtx {
+        RipCtx {
+            routing_table: ri.interfaces
+                .iter()
+                .map(|iface| {
+                    RouteEntry {
+                        dst: iface.src_vip,
+                        next_hop: iface.src_vip,
+                        metric: 0,
+                        timer: SystemTime::now(),
+                        route_src: iface.src_vip,
+                        route_changed: true,
+                    }
+                })
+                .collect(),
+        }
     }
 
     pub fn send_routing_update(&self) {}
