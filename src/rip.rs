@@ -22,13 +22,13 @@ pub struct Route {
 }
 
 struct RouteEntry {
-    dstAddress: Ipv4Addr,
-    nextHop: Ipv4Addr,
+    dst: Ipv4Addr,
+    next_hop: Ipv4Addr,
     interface: Interface, // which physical interface for this route
     metric: u8, // max 16, TODO create a new type
     timer: Duration, // since last updated
-    routesrc: Ipv4Addr, // gateway that provided this route
-    routeChangeFlag: bool,
+    route_src: Ipv4Addr, // gateway that provided this route
+    route_changed: bool,
 }
 
 #[packet]
@@ -50,12 +50,12 @@ pub struct RipEntry {
 }
 
 pub struct RipCtx {
-    routingTable: Vec<RouteEntry>,
+    routing_table: Vec<RouteEntry>,
 }
 
 impl RipCtx {
     pub fn new(ri: RouteInfo) -> RipCtx {
-        RipCtx { routingTable: Vec::new() }
+        RipCtx { routing_table: Vec::new() }
     }
 
     pub fn send_routing_update(&self) {}
