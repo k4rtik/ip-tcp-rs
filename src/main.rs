@@ -180,7 +180,7 @@ fn main() {
 
     let dl_ctx_clone = dl_ctx.clone();
     println!("Starting node...");
-    let cli = thread::spawn(move || cli_impl(dl_ctx_clone));
+    thread::spawn(move || cli_impl(dl_ctx_clone));
 
     ip::start_ip_module(&dl_ctx, rx);
 }
