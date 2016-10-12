@@ -7,6 +7,7 @@ use pnet::packet::ipv4::{self, MutableIpv4Packet, Ipv4Packet, Ipv4Option};
 use std::net::Ipv4Addr;
 use std::sync::{Arc, RwLock};
 use std::sync::mpsc::Receiver;
+use std::str;
 
 use datalink::DataLink;
 use rip;
@@ -90,7 +91,9 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>, pkt: Ipv4Packet) {
         let dst = pkt.get_destination();
         if (*dl_ctx.read().unwrap()).is_local_address(dst) {
             match pkt.get_next_level_protocol() {
-                IpNextHeaderProtocol(0) => println!("{:?}", pkt),
+                IpNextHeaderProtocol(0) => {
+			print_pkt_contents(pkt);
+		}
                 IpNextHeaderProtocol(200) => rip::handler(pkt.payload()),
                 _ => info!("Unsupported packet!"),
             }
@@ -109,5 +112,16 @@ pub fn start_ip_module(dl_ctx: &Arc<RwLock<DataLink>>, rx: Receiver<Ipv4Packet>)
         let pkt = rx.recv().unwrap();
         debug!("{:?}", pkt);
         handle_packet(dl_ctx, pkt);
-    }
+}
+}
+fn print_pkt_contents(pkt: Ipv4Packet) {
+	
+	println!("Packet contents:");
+	println!("Source IP: {}", pkt.get_source());
+	println!("Destination IP: {}", pkt.get_destination());
+	println!("Body length: {}", pkt.get_total_length());
+	println!("Header:");
+	println!("\ttos: 0\n\tid: {}\n\tproto: 0", pkt.get_identification());
+	//println!("Payload: {}", str::from_utf8(pkt.payload()).unwrap());
+	
 }
