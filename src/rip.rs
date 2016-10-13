@@ -9,7 +9,7 @@ use std::net::Ipv4Addr;
 use std::time::{Duration, SystemTime};
 use std::thread;
 
-const RIP_PERIOD: u64 = 15;
+const RIP_PERIOD: u64 = 5;
 const RIP_PROT: u8 = 200;
 const RIP_MAX_SIZE: usize = 2 + 2 + 64 * 8; // from given packet format
 
@@ -20,6 +20,7 @@ pub struct Route {
     pub cost: u8,
 }
 
+#[derive(Debug)]
 struct RouteEntry {
     dst: Ipv4Addr,
     next_hop: Ipv4Addr,
@@ -67,30 +68,81 @@ impl RipCtx {
 
     pub fn send_routing_update(&self) {}
 
-    pub fn update_route_status(&self, s: Ipv4Addr, status: bool) {
-        for r in &self.routing_table {
-            if r.next_hop == s {
-                if status {
-                    let tmp = Route {
-                        src: r.next_hop,
-                        dst: r.dst,
-                        cost: 0,
-                    };
-                    // self.update_routing_table(tmp);
-                } else {
-                    let tmp = Route {
-                        src: r.next_hop,
-                        dst: r.dst,
-                        cost: 16,
-                    };
-                    // self.update_routing_table(tmp);
-                }
+    pub fn update_route_status(&mut self,
+                               dl_ctx: &Arc<RwLock<DataLink>>,
+                               src: Ipv4Addr,
+                               status: bool) {
+        let mut entries = Vec::<Route>::new();
+        {
+            let rentry = self.routing_table.iter().find(|rentry| rentry.next_hop == src).unwrap();
+            if status {
+                entries.push(Route {
+                    src: rentry.next_hop,
+                    dst: rentry.dst,
+                    cost: 0,
+                });
+            } else {
+                entries.push(Route {
+                    src: rentry.next_hop,
+                    dst: rentry.dst,
+                    cost: 16,
+                });
             }
         }
+        self.update_routing_table(dl_ctx, entries);
     }
 
-    pub fn update_routing_table(&self, rentries: Vec<Route>) {
-        debug!("{:?}", rentries);
+    pub fn update_routing_table(&mut self, dl_ctx: &Arc<RwLock<DataLink>>, routes: Vec<Route>) {
+        debug!{"Received routes for update: {:?}", routes};
+        for route in routes {
+            if !route.dst.is_loopback() && !(*dl_ctx.read().unwrap()).is_local_address(route.dst) {
+                if route.cost < 17 {
+                    let route = Route {
+                        cost: if route.cost + 1 < 16 {
+                            route.cost + 1
+                        } else {
+                            route.cost
+                        },
+                        ..route
+                    };
+
+                    let mut need_to_add = false;
+                    debug!("BEFORE routing_table: {:?}", self.routing_table);
+                    match self.routing_table.iter_mut().find(|rentry| rentry.dst == route.dst) {
+                        Some(rentry) => {
+                            rentry.metric = route.cost;
+                            rentry.timer = SystemTime::now();
+                            rentry.route_changed = true;
+                            debug!("rentry: {:?}", rentry);
+                        }
+                        None => {
+                            if route.cost < 16 {
+                                info!("Adding new rentry");
+                                need_to_add = true;
+                            }
+                        }
+                    }
+                    if need_to_add {
+                        self.routing_table.push(RouteEntry {
+                            dst: route.dst,
+                            next_hop: (*dl_ctx.read().unwrap())
+                                .get_interface_by_dst(route.src)
+                                .unwrap()
+                                .src,
+                            metric: route.cost,
+                            timer: SystemTime::now(),
+                            route_src: route.src,
+                            route_changed: true,
+                        });
+                    }
+                    debug!("AFTER routing_table: {:?}", self.routing_table);
+                } else {
+                    error!("cost is invalid: {}", route.cost);
+                }
+            } else {
+                error!("dst: {} is local or global", route.dst);
+            }
+        }
     }
 
     pub fn get_routes(&self) -> Vec<Route> {
@@ -157,7 +209,7 @@ fn send_routing_table(rip_ctx: &Arc<RwLock<RipCtx>>,
                        rip_ctx,
                        ip_params,
                        RIP_PROT,
-                       16,
+                       16, // TTL
                        rip_pkt.packet().to_vec(),
                        0,
                        true);
@@ -191,10 +243,12 @@ pub fn pkt_handler(rip_ctx: &Arc<RwLock<RipCtx>>,
         }
         2 => {
             // response
+            info!("processing RIP response");
             if (*dl_ctx.read().unwrap()).is_neighbor_address(ip_params.src) {
-                (*rip_ctx.read().unwrap()).update_routing_table(pkt.get_entries()
-                    .iter()
-                    .map(|ripentry| {
+                (*rip_ctx.write().unwrap()).update_routing_table(dl_ctx,
+                                                                 pkt.get_entries()
+                                                                     .iter()
+                                                                     .map(|ripentry| {
                         let mut buf = vec![0u8; 8];
                         let mut re_pkt = MutableRipEntryPacket::new(&mut buf).unwrap();
                         re_pkt.populate(ripentry);
@@ -204,7 +258,7 @@ pub fn pkt_handler(rip_ctx: &Arc<RwLock<RipCtx>>,
                             cost: re_pkt.get_cost() as u8,
                         }
                     })
-                    .collect());
+                                                                     .collect());
             } else {
                 error!("RIP packet came from non-neighbor: {}", ip_params.src);
             }
