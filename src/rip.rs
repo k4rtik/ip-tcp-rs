@@ -169,9 +169,15 @@ fn build_rip_entry_pkt(rip_ctx: &Arc<RwLock<RipCtx>>, entry_id: usize, packet: &
     // debug!("{:?}", ripe_pkt);
 }
 
-fn build_rip_pkt(rip_ctx: &Arc<RwLock<RipCtx>>, packet: &mut [u8]) -> usize {
-    let num_entries = (*rip_ctx.read().unwrap()).get_num_entries();
-    {
+fn build_rip_pkt(rip_ctx: &Arc<RwLock<RipCtx>>, packet: &mut [u8], request: bool) -> usize {
+    let mut num_entries = (*rip_ctx.read().unwrap()).get_num_entries();
+    if request {
+        let mut rip_pkt = MutableRipPacket::new(packet).unwrap();
+
+        rip_pkt.set_command(1);
+        rip_pkt.set_num_entries(0);
+        num_entries = 0;
+    } else {
         let mut rip_pkt = MutableRipPacket::new(packet).unwrap();
 
         rip_pkt.set_command(2);
@@ -195,7 +201,7 @@ fn send_routing_table(rip_ctx: &Arc<RwLock<RipCtx>>,
                       dl_ctx: &Arc<RwLock<DataLink>>,
                       dst: Ipv4Addr) {
     let mut rip_buf = vec![0u8; RIP_MAX_SIZE];
-    let pkt_size = build_rip_pkt(rip_ctx, &mut rip_buf);
+    let pkt_size = build_rip_pkt(rip_ctx, &mut rip_buf, false);
     let rip_pkt = RipPacket::new(&rip_buf).unwrap();
     let ip_params = ip::IpParams {
         src: Ipv4Addr::new(127, 0, 0, 1),
@@ -204,6 +210,7 @@ fn send_routing_table(rip_ctx: &Arc<RwLock<RipCtx>>,
         tos: 0,
         opt: vec![],
     };
+    debug!("SENDING RIP: {:?}", rip_pkt);
     let res = ip::send(dl_ctx,
                        rip_ctx,
                        ip_params,
@@ -219,6 +226,32 @@ fn send_routing_table(rip_ctx: &Arc<RwLock<RipCtx>>,
 }
 
 pub fn start_rip_module(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<RipCtx>>) {
+    let interfaces = (*dl_ctx.read().unwrap()).get_interfaces();
+    for iface in interfaces {
+        let mut rip_buf = vec![0u8; 4];
+        let pkt_size = build_rip_pkt(rip_ctx, &mut rip_buf, true);
+        let rip_pkt = RipPacket::new(&rip_buf).unwrap();
+        let ip_params = ip::IpParams {
+            src: Ipv4Addr::new(127, 0, 0, 1),
+            dst: iface.dst,
+            len: pkt_size,
+            tos: 0,
+            opt: vec![],
+        };
+        debug!("SENDING RIP REQUEST: {:?}", rip_pkt);
+        let res = ip::send(&dl_ctx,
+                           &rip_ctx,
+                           ip_params,
+                           RIP_PROT,
+                           16, // TTL
+                           rip_pkt.packet().to_vec(),
+                           0,
+                           true);
+        match res {
+            Ok(_) => info!("RIP request sent succesfully on {:?}", iface.dst),
+            Err(str) => error!("{}", str),
+        }
+    }
     loop {
         let interfaces = (*dl_ctx.read().unwrap()).get_interfaces();
         for iface in interfaces {
