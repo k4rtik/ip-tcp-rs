@@ -2,10 +2,16 @@
 name = "ip-tcp"
 version = "0.1.0"
 authors = ["Kartik Singhal <kartiksinghal@gmail.com>", "Sumukha TV <tvsumukha@gmail.com>"]
+build = "build.rs"
+
+[build-dependencies]
+syntex = "0.42.*"
+pnet_macros = "*"
 
 [dependencies]
 env_logger = "0.3"
 log = "0.3"
+pnet = "*"
 pnet_macros_support = "*"
 
 [dependencies.clap]
@@ -15,6 +21,3 @@ default-features = false
 [[bin]]
 name = "node"
 path = "src/main.rs"
-
-[dependencies.pnet]
-version = "0.13.0"

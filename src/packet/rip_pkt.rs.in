@@ -1,0 +1,23 @@
+use pnet_macros_support::types::*;
+use std::net::Ipv4Addr;
+
+#[packet]
+pub struct Rip {
+    command: u16be,
+    num_entries: u16be,
+    #[length = "num_entries * 8"]
+    entries: Vec<RipEntry>,
+    #[payload]
+    #[length = "0"]
+    payload: Vec<u8>, // unused
+}
+
+#[packet]
+pub struct RipEntry {
+    cost: u32be,
+    #[construct_with(u8, u8, u8, u8)]
+    address: Ipv4Addr,
+    #[payload]
+    #[length = "0"]
+    payload: Vec<u8>, // unused
+}

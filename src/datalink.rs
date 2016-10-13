@@ -1,4 +1,4 @@
-use pnet::packet::Packet;
+use pnet::packet::{Packet, PacketSize};
 use pnet::packet::ipv4::Ipv4Packet;
 
 use std::sync::{Arc, RwLock};

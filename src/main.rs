@@ -1,5 +1,3 @@
-#![feature(custom_attribute)]
-
 #[macro_use]
 extern crate log;
 
@@ -21,6 +19,7 @@ mod datalink;
 use datalink::*;
 
 mod ip;
+mod packet;
 
 mod rip;
 use rip::RipCtx;
@@ -194,5 +193,9 @@ fn main() {
     println!("Starting node...");
     thread::spawn(move || cli_impl(dl_ctx_clone, rip_ctx_clone));
 
+    let dl_ctx_clone = dl_ctx.clone();
+    thread::spawn(move || rip::start_rip_module(&dl_ctx_clone, &rip_ctx));
+
     ip::start_ip_module(&dl_ctx, rx);
+
 }
