@@ -76,21 +76,21 @@ impl RipCtx {
                         dst: r.dst,
                         cost: 0,
                     };
-                    self.update_routing_table(tmp);
+                    // self.update_routing_table(tmp);
                 } else {
                     let tmp = Route {
                         src: r.next_hop,
                         dst: r.dst,
                         cost: 16,
                     };
-                    self.update_routing_table(tmp);
+                    // self.update_routing_table(tmp);
                 }
             }
         }
     }
 
-    pub fn update_routing_table(&self, r: Route) {
-        debug!("{:?}", r);
+    pub fn update_routing_table(&self, rentries: Vec<Route>) {
+        debug!("{:?}", rentries);
     }
 
     pub fn get_routes(&self) -> Vec<Route> {
@@ -186,10 +186,28 @@ pub fn pkt_handler(rip_ctx: &Arc<RwLock<RipCtx>>,
         1 => {
             // request
             info!("processing RIP request");
-            send_routing_table(rip_ctx, dl_ctx, ip_params.dst);
+            // TODO check num_entries = 0
+            send_routing_table(rip_ctx, dl_ctx, ip_params.src);
         }
         2 => {
             // response
+            if (*dl_ctx.read().unwrap()).is_neighbor_address(ip_params.src) {
+                (*rip_ctx.read().unwrap()).update_routing_table(pkt.get_entries()
+                    .iter()
+                    .map(|ripentry| {
+                        let mut buf = vec![0u8; 8];
+                        let mut re_pkt = MutableRipEntryPacket::new(&mut buf).unwrap();
+                        re_pkt.populate(ripentry);
+                        Route {
+                            dst: re_pkt.get_address(),
+                            src: ip_params.src,
+                            cost: re_pkt.get_cost() as u8,
+                        }
+                    })
+                    .collect());
+            } else {
+                error!("RIP packet came from non-neighbor: {}", ip_params.src);
+            }
         }
         _ => error!("Invalid RIP packet, discarding"),
     }
