@@ -15,10 +15,6 @@ const RIP_MAX_SIZE: usize = 2 + 2 + 64 * 8; // from given packet format
 
 pub fn handler(rip_ctx: &Arc<RwLock<RipCtx>>, rip_pkt: &[u8]) {}
 
-pub fn get_next_hop(dst: Ipv4Addr) -> Ipv4Addr {
-    dst
-}
-
 #[derive(Debug, Clone)]
 pub struct Route {
     pub dst: Ipv4Addr,
@@ -56,6 +52,14 @@ impl RipCtx {
                     }
                 })
                 .collect(),
+        }
+    }
+
+    pub fn get_next_hop(&self, dst: Ipv4Addr) -> Option<Ipv4Addr> {
+        info!("get_next_hop called");
+        match self.routing_table.iter().find(|rentry| rentry.dst == dst) {
+            Some(re) => Some(re.next_hop),
+            None => None,
         }
     }
 
