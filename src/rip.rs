@@ -13,7 +13,7 @@ const RIP_PERIOD: u64 = 15;
 const RIP_PROT: u8 = 200;
 const RIP_MAX_SIZE: usize = 2 + 2 + 64 * 8; // from given packet format
 
-pub fn handler(rip_pkt: &[u8]) {}
+pub fn handler(rip_ctx: &Arc<RwLock<RipCtx>>, rip_pkt: &[u8]) {}
 
 pub fn get_next_hop(dst: Ipv4Addr) -> Ipv4Addr {
     dst
@@ -153,6 +153,7 @@ pub fn start_rip_module(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<Rip
                 opt: vec![],
             };
             let res = ip::send(&dl_ctx,
+                               &rip_ctx,
                                ip_params,
                                RIP_PROT,
                                16,

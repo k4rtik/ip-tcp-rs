@@ -146,7 +146,8 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
                                 tos: 0,
                                 opt: vec![],
                             };
-                            let res = ip::send(&dl_ctx, ip_params, proto, 16, message, 0, true);
+                            let res =
+                                ip::send(&dl_ctx, &rip_ctx, ip_params, proto, 16, message, 0, true);
                             match res {
                                 Ok(_) => info!("Message sent succesfully"),
                                 Err(str) => error!("{}", str),
@@ -200,8 +201,9 @@ fn main() {
     thread::spawn(move || cli_impl(dl_ctx_clone, rip_ctx_clone));
 
     let dl_ctx_clone = dl_ctx.clone();
-    thread::spawn(move || rip::start_rip_module(&dl_ctx_clone, &rip_ctx));
+    let rip_ctx_clone = rip_ctx.clone();
+    thread::spawn(move || rip::start_rip_module(&dl_ctx_clone, &rip_ctx_clone));
 
-    ip::start_ip_module(&dl_ctx, rx);
+    ip::start_ip_module(&dl_ctx, &rip_ctx, rx);
 
 }

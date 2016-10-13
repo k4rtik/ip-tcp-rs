@@ -10,7 +10,7 @@ use std::sync::mpsc::Receiver;
 use std::str;
 
 use datalink::DataLink;
-use rip;
+use rip::{self, RipCtx};
 
 const IPV4_HEADER_LEN: usize = 20;
 
@@ -49,6 +49,7 @@ fn build_ipv4_header(params: &IpParams, prot: u8, ttl: u8, id: u16, packet: &mut
 
 /// conforms to SEND interface described in RFC 791 pg. 32
 pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
+            rip_ctx: &Arc<RwLock<RipCtx>>,
             params: IpParams,
             prot: u8,
             ttl: u8,
@@ -65,7 +66,7 @@ pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
         let params = IpParams { src: params.src, ..params };
         build_ipv4_header(&params, prot, ttl, id, &mut pkt_buf);
         let pkt = Ipv4Packet::new(&pkt_buf).unwrap();
-        handle_packet(dl_ctx, pkt);
+        handle_packet(dl_ctx, rip_ctx, pkt);
         Ok(())
     } else {
         let params = IpParams {
@@ -92,7 +93,7 @@ pub fn recv(mut buf: &mut Vec<u8>, prot: u8) -> Result<IpParams, String> {
     Err("Nothing here".to_string())
 }
 
-fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>, pkt: Ipv4Packet) {
+fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<RipCtx>>, pkt: Ipv4Packet) {
     // TODO check for fragmentation
     if pkt.get_checksum() == ipv4::checksum(&pkt.to_immutable()) {
         let dst = pkt.get_destination();
@@ -101,7 +102,7 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>, pkt: Ipv4Packet) {
                 IpNextHeaderProtocol(0) => {
                     print_pkt_contents(pkt);
                 }
-                IpNextHeaderProtocol(200) => rip::handler(pkt.payload()),
+                IpNextHeaderProtocol(200) => rip::handler(rip_ctx, pkt.payload()),
                 _ => info!("Unsupported packet!"),
             }
         } else {
@@ -115,10 +116,12 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>, pkt: Ipv4Packet) {
     }
 }
 
-pub fn start_ip_module(dl_ctx: &Arc<RwLock<DataLink>>, rx: Receiver<Ipv4Packet>) {
+pub fn start_ip_module(dl_ctx: &Arc<RwLock<DataLink>>,
+                       rip_ctx: &Arc<RwLock<RipCtx>>,
+                       rx: Receiver<Ipv4Packet>) {
     loop {
         let pkt = rx.recv().unwrap();
-        handle_packet(dl_ctx, pkt);
+        handle_packet(dl_ctx, rip_ctx, pkt);
     }
 }
 
