@@ -65,7 +65,31 @@ impl RipCtx {
 
     pub fn send_routing_update(&self) {}
 
-    pub fn update_routing_table(&self) {}
+    pub fn update_route_status(&self, s: Ipv4Addr, status: bool) {
+        for r in &self.routing_table {
+            if r.next_hop == s {
+                if status {
+                    let tmp = Route {
+                        src: r.next_hop,
+                        dst: r.dst,
+                        cost: 0,
+                    };
+                    self.update_routing_table(tmp);
+                } else {
+                    let tmp = Route {
+                        src: r.next_hop,
+                        dst: r.dst,
+                        cost: 16,
+                    };
+                    self.update_routing_table(tmp);
+                }
+            }
+        }
+    }
+
+    pub fn update_routing_table(&self, r: Route) {
+        debug!("{:?}", r);
+    }
 
     pub fn get_routes(&self) -> Vec<Route> {
         self.routing_table
