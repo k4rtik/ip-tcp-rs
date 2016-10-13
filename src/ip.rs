@@ -138,11 +138,15 @@ pub fn start_ip_module(dl_ctx: &Arc<RwLock<DataLink>>,
     }
 }
 
+fn get_ipv4_payload_length(pkt: &Ipv4Packet) -> usize {
+    pkt.get_total_length() as usize - pkt.get_header_length() as usize * 4
+}
+
 fn print_pkt_contents(pkt: Ipv4Packet) {
     println!("Packet contents:");
     println!("Source IP: {}", pkt.get_source());
     println!("Destination IP: {}", pkt.get_destination());
-    let len = pkt.get_total_length() as usize - pkt.get_header_length() as usize * 4;
+    let len = get_ipv4_payload_length(&pkt);
     println!("Body length: {}", len);
     println!("Header:");
     println!("\ttos: 0\n\tid: {}\n\tproto: 0", pkt.get_identification());
