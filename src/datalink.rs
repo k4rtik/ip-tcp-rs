@@ -97,9 +97,8 @@ impl DataLink {
         };
         if *priv_iface.enabled.read().unwrap() {
             let socket_addr = priv_iface.socket_addr.clone();
-            debug!("{:?}", socket_addr);
-            debug!("{:?}", pkt.packet());
-            let sent_count = self.local_socket.send_to(pkt.packet(), &*socket_addr);
+            let len = pkt.get_total_length() as usize;
+            let sent_count = self.local_socket.send_to(&pkt.packet()[..len], &*socket_addr);
             debug!("{:?}", sent_count);
             if sent_count.unwrap() > 0 {
                 Ok(())

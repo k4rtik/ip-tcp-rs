@@ -12,7 +12,7 @@ use std::str;
 use datalink::DataLink;
 use rip;
 
-static IPV4_HEADER_LEN: usize = 20;
+const IPV4_HEADER_LEN: usize = 20;
 
 #[derive(Debug)]
 pub struct IpParams {
@@ -61,8 +61,8 @@ pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
     }
     let mut pkt_buf = vec![0u8; IPV4_HEADER_LEN];
     pkt_buf.append(&mut payload);
-    debug!("{:?}", pkt_buf);
     if (*dl_ctx.read().unwrap()).is_local_address(params.dst) {
+        let params = IpParams { src: params.src, ..params };
         build_ipv4_header(&params, prot, ttl, id, &mut pkt_buf);
         let pkt = Ipv4Packet::new(&pkt_buf).unwrap();
         handle_packet(dl_ctx, pkt);
@@ -121,12 +121,15 @@ pub fn start_ip_module(dl_ctx: &Arc<RwLock<DataLink>>, rx: Receiver<Ipv4Packet>)
         handle_packet(dl_ctx, pkt);
     }
 }
+
 fn print_pkt_contents(pkt: Ipv4Packet) {
     println!("Packet contents:");
     println!("Source IP: {}", pkt.get_source());
     println!("Destination IP: {}", pkt.get_destination());
-    println!("Body length: {}", pkt.get_total_length());
+    let len = pkt.get_total_length() as usize - pkt.get_header_length() as usize * 4;
+    println!("Body length: {}", len);
     println!("Header:");
     println!("\ttos: 0\n\tid: {}\n\tproto: 0", pkt.get_identification());
-    println!("Payload: {}", str::from_utf8(pkt.payload()).unwrap());
+    let message = Vec::from(&pkt.payload()[..len]);
+    println!("Payload: {}", String::from_utf8(message).unwrap());
 }
