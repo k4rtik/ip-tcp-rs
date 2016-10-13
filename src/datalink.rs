@@ -84,6 +84,17 @@ impl DataLink {
             .next()
     }
 
+    pub fn get_interface_by_src(&self, src: Ipv4Addr) -> Option<Interface> {
+        self.get_interfaces()
+            .iter()
+            .filter_map(|iface| if iface.src == src {
+                Some((*iface).clone())
+            } else {
+                None
+            })
+            .next()
+    }
+
     pub fn is_local_address(&self, dst: Ipv4Addr) -> bool {
         self.interfaces.iter().any(|iface| iface.src == dst)
     }
