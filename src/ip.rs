@@ -69,22 +69,45 @@ pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
         handle_packet(dl_ctx, rip_ctx, pkt);
         Ok(())
     } else {
-        let params = IpParams {
-            src: if params.src.is_loopback() {
+        match (*rip_ctx.read().unwrap()).get_next_hop(params.dst) {
+            Some(next_hop) => {
+                let params = IpParams {
+                    src: if params.src.is_loopback() {
+                        match (*dl_ctx.read().unwrap()).get_interface_by_src(next_hop) {
+                            Some(iface) => iface.src,
+                            None => return Err("No interface matching next_hop found!".to_string()),
+                        }
+                    } else {
+                        params.src
+                    },
+                    ..params
+                };
+                debug!{"{:?}", params};
+                build_ipv4_header(&params, prot, ttl, id, &mut pkt_buf);
+                let pkt = Ipv4Packet::new(&pkt_buf).unwrap();
+                (*dl_ctx.read().unwrap()).send_packet(params.src, pkt)
+            }
+            None => {
                 match (*dl_ctx.read().unwrap()).get_interface_by_dst(params.dst) {
-                    Some(iface) => iface.src,
-                    None => return Err("No interface matching dst found!".to_string()),
-                }
-            } else {
-                params.src
-            },
-            ..params
-        };
-        debug!{"{:?}", params};
+                    Some(iface) => {
 
-        build_ipv4_header(&params, prot, ttl, id, &mut pkt_buf);
-        let pkt = Ipv4Packet::new(&pkt_buf).unwrap();
-        (*dl_ctx.read().unwrap()).send_packet(params.dst, pkt)
+                        let params = IpParams {
+                            src: if params.src.is_loopback() {
+                                iface.src
+                            } else {
+                                params.src
+                            },
+                            ..params
+                        };
+                        debug!{"{:?}", params};
+                        build_ipv4_header(&params, prot, ttl, id, &mut pkt_buf);
+                        let pkt = Ipv4Packet::new(&pkt_buf).unwrap();
+                        (*dl_ctx.read().unwrap()).send_packet(params.src, pkt)
+                    }
+                    None => Err("No interface matching dst found!".to_string()),
+                }
+            }
+        }
     }
 }
 
