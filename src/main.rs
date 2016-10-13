@@ -87,15 +87,15 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
                         }
                     }
                     "routes" => {
-                        // let routes = rip::get_routes();
-                        // if routes.len() > 0 {
-                        //    println!("\tdst\t\tsrc\t\tcost");
-                        //    for r in routes {
-                        //        println!("\t{}\t{}\t{}", r.dst, r.src, r.cost);
-                        //    }
-                        // } else {
-                        //    println!("No routes found!");
-                        // }
+                        let routes = (*rip_ctx.read().unwrap()).get_routes();
+                        if routes.len() > 0 {
+                            println!("dst\t\tsrc\t\tcost");
+                            for r in routes {
+                                println!("{}\t{}\t{}", r.dst, r.src, r.cost);
+                            }
+                        } else {
+                            println!("No routes found!");
+                        }
                     }
                     "down" => {
                         if cmd_vec.len() != 2 {
