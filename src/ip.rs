@@ -102,14 +102,27 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<RipCtx>>, 
                 IpNextHeaderProtocol(0) => {
                     print_pkt_contents(pkt);
                 }
-                IpNextHeaderProtocol(200) => rip::handler(rip_ctx, pkt.payload()),
-                _ => info!("Unsupported packet!"),
+                IpNextHeaderProtocol(200) => {
+                    rip::pkt_handler(rip_ctx,
+                                     dl_ctx,
+                                     pkt.payload(),
+                                     IpParams {
+                                         src: pkt.get_source(),
+                                         dst: pkt.get_destination(),
+                                         len: get_ipv4_payload_length(&pkt),
+                                         tos: 0, // XXX hardcoded, incorrect
+                                         opt: pkt.get_options(),
+                                     });
+                }
+                _ => error!("Unsupported packet!"),
             }
         } else {
             info!("Forwarding to next hop");
             // TODO decrease TTL
-            let next_hop = rip::get_next_hop(dst);
-            (*dl_ctx.read().unwrap()).send_packet(next_hop, pkt).unwrap();
+            match (*rip_ctx.read().unwrap()).get_next_hop(dst) {
+                Some(hop) => (*dl_ctx.read().unwrap()).send_packet(hop, pkt).unwrap(),
+                None => error!("No route to {}", dst),
+            }
         }
     } else {
         error!("Invalid packet, discarding");

@@ -13,8 +13,6 @@ const RIP_PERIOD: u64 = 15;
 const RIP_PROT: u8 = 200;
 const RIP_MAX_SIZE: usize = 2 + 2 + 64 * 8; // from given packet format
 
-pub fn handler(rip_ctx: &Arc<RwLock<RipCtx>>, rip_pkt: &[u8]) {}
-
 #[derive(Debug, Clone)]
 pub struct Route {
     pub dst: Ipv4Addr,
@@ -142,33 +140,57 @@ fn build_rip_pkt(rip_ctx: &Arc<RwLock<RipCtx>>, packet: &mut [u8]) -> usize {
     idx
 }
 
+fn send_routing_table(rip_ctx: &Arc<RwLock<RipCtx>>,
+                      dl_ctx: &Arc<RwLock<DataLink>>,
+                      dst: Ipv4Addr) {
+    let mut rip_buf = vec![0u8; RIP_MAX_SIZE];
+    let pkt_size = build_rip_pkt(rip_ctx, &mut rip_buf);
+    let rip_pkt = RipPacket::new(&rip_buf).unwrap();
+    let ip_params = ip::IpParams {
+        src: Ipv4Addr::new(127, 0, 0, 1),
+        dst: dst,
+        len: pkt_size,
+        tos: 0,
+        opt: vec![],
+    };
+    let res = ip::send(dl_ctx,
+                       rip_ctx,
+                       ip_params,
+                       RIP_PROT,
+                       16,
+                       rip_pkt.packet().to_vec(),
+                       0,
+                       true);
+    match res {
+        Ok(_) => info!("RIP update sent succesfully on {:?}", dst),
+        Err(str) => error!("{}", str),
+    }
+}
+
 pub fn start_rip_module(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<RipCtx>>) {
     loop {
         let interfaces = (*dl_ctx.read().unwrap()).get_interfaces();
         for iface in interfaces {
-            let mut rip_buf = vec![0u8; RIP_MAX_SIZE];
-            let pkt_size = build_rip_pkt(rip_ctx, &mut rip_buf);
-            let rip_pkt = RipPacket::new(&rip_buf).unwrap();
-            let ip_params = ip::IpParams {
-                src: Ipv4Addr::new(127, 0, 0, 1),
-                dst: iface.dst,
-                len: pkt_size,
-                tos: 0,
-                opt: vec![],
-            };
-            let res = ip::send(&dl_ctx,
-                               &rip_ctx,
-                               ip_params,
-                               RIP_PROT,
-                               16,
-                               rip_pkt.packet().to_vec(),
-                               0,
-                               true);
-            match res {
-                Ok(_) => info!("RIP update sent succesfully on {:?}", iface.dst),
-                Err(str) => error!("{}", str),
-            }
+            send_routing_table(rip_ctx, dl_ctx, iface.dst);
         }
         thread::sleep(Duration::from_secs(RIP_PERIOD));
+    }
+}
+
+pub fn pkt_handler(rip_ctx: &Arc<RwLock<RipCtx>>,
+                   dl_ctx: &Arc<RwLock<DataLink>>,
+                   rip_pkt: &[u8],
+                   ip_params: ip::IpParams) {
+    let pkt = RipPacket::new(rip_pkt).unwrap();
+    match pkt.get_command() {
+        1 => {
+            // request
+            info!("processing RIP request");
+            send_routing_table(rip_ctx, dl_ctx, ip_params.dst);
+        }
+        2 => {
+            // response
+        }
+        _ => error!("Invalid RIP packet, discarding"),
     }
 }
