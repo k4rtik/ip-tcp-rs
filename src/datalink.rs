@@ -88,6 +88,10 @@ impl DataLink {
         self.interfaces.iter().any(|iface| iface.src == dst)
     }
 
+    pub fn is_neighbor_address(&self, dst: Ipv4Addr) -> bool {
+        self.interfaces.iter().any(|iface| iface.dst == dst)
+    }
+
     // to be called only by the IP Layer
     pub fn send_packet(&self, next_hop: Ipv4Addr, pkt: Ipv4Packet) -> Result<(), String> {
         debug!("{:?}, {:?}", next_hop, pkt);
