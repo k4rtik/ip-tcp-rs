@@ -243,7 +243,7 @@ impl RipCtx {
     pub fn expire_old_entries(&mut self) {
         for r in self.routing_table.iter_mut() {
             let duration = SystemTime::now().duration_since(r.timer).unwrap();
-            if duration.as_secs() >= RIP_TIMEOUT * 60 {
+            if duration.as_secs() >= RIP_TIMEOUT {
                 r.timer = SystemTime::now();
                 r.metric = 16;
             }
