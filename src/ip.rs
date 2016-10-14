@@ -150,7 +150,7 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>,
             // info!("Forwarding to next hop");
             match (*rip_ctx.read().unwrap()).get_next_hop(dst) {
                 Some(hop) => {
-                    if pkt.get_ttl() > 1 {
+                    if pkt.get_ttl() > 0 {
                         let old_ttl = pkt.get_ttl();
                         pkt.set_ttl(old_ttl);
                         let cksum = ipv4::checksum(&pkt.to_immutable());
