@@ -189,9 +189,13 @@ impl RipCtx {
                     debug!("BEFORE routing_table: {:?}", self.routing_table);
                     match self.routing_table.iter_mut().find(|rentry| rentry.dst == route.dst) {
                         Some(rentry) => {
-                            rentry.metric = route.cost;
+                            rentry.metric = if route.cost < rentry.metric {
+                                rentry.route_changed = true;
+                                route.cost
+                            } else {
+                                rentry.metric
+                            };
                             rentry.timer = SystemTime::now();
-                            rentry.route_changed = true;
                             debug!("rentry: {:?}", rentry);
                         }
                         None => {
