@@ -1,13 +1,13 @@
+use packet::rip_pkt::{RipPacket, MutableRipPacket, MutableRipEntryPacket};
+use pnet::packet::Packet;
+
+use std::net::Ipv4Addr;
+use std::sync::{Arc, RwLock};
+use std::thread;
+use std::time::{Duration, SystemTime};
+
 use datalink::{RouteInfo, DataLink};
 use ip;
-use pnet::packet::{Packet, MutablePacket};
-
-use packet::rip_pkt::{RipPacket, MutableRipPacket, RipEntryPacket, MutableRipEntryPacket};
-
-use std::sync::{Arc, RwLock};
-use std::net::Ipv4Addr;
-use std::time::{Duration, SystemTime};
-use std::thread;
 
 const RIP_PERIOD: u64 = 5;
 const RIP_PROT: u8 = 200;

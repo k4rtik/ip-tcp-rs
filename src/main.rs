@@ -1,10 +1,14 @@
-#[macro_use]
-extern crate log;
-
 extern crate clap;
 extern crate env_logger;
+#[macro_use]
+extern crate log;
 extern crate pnet;
 extern crate pnet_macros_support;
+
+mod datalink;
+mod ip;
+mod packet;
+mod rip;
 
 use clap::{App, Arg};
 
@@ -15,13 +19,7 @@ use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 use std::thread;
 
-mod datalink;
 use datalink::*;
-
-mod ip;
-mod packet;
-
-mod rip;
 use rip::RipCtx;
 
 fn parse_lnx(filename: &str) -> RouteInfo {

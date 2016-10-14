@@ -1,9 +1,9 @@
-use pnet::packet::{Packet, PacketSize};
+use pnet::packet::Packet;
 use pnet::packet::ipv4::{MutableIpv4Packet, Ipv4Packet};
 
-use std::sync::{Arc, RwLock};
-use std::sync::mpsc::{self, Sender, Receiver};
 use std::net::{Ipv4Addr, UdpSocket};
+use std::sync::mpsc::{self, Sender, Receiver};
+use std::sync::{Arc, RwLock};
 use std::thread;
 
 // TODO choose a better name for this struct

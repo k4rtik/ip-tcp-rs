@@ -1,13 +1,11 @@
-extern crate pnet;
-
 use pnet::packet::Packet;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use pnet::packet::ipv4::{self, MutableIpv4Packet, Ipv4Packet, Ipv4Option};
 
 use std::net::Ipv4Addr;
-use std::sync::{Arc, RwLock};
-use std::sync::mpsc::Receiver;
 use std::str;
+use std::sync::mpsc::Receiver;
+use std::sync::{Arc, RwLock};
 
 use datalink::DataLink;
 use rip::{self, RipCtx};
