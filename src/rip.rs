@@ -56,7 +56,7 @@ impl RipCtx {
     }
 
     pub fn get_next_hop(&self, dst: Ipv4Addr) -> Option<Ipv4Addr> {
-        match self.routing_table.iter().find(|rentry| rentry.dst == dst) {
+        match self.routing_table.iter().find(|rentry| rentry.dst == dst && rentry.metric != 16) {
             Some(re) => Some(re.next_hop),
             None => None,
         }
