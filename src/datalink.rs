@@ -1,5 +1,5 @@
 use pnet::packet::{Packet, PacketSize};
-use pnet::packet::ipv4::Ipv4Packet;
+use pnet::packet::ipv4::{MutableIpv4Packet, Ipv4Packet};
 
 use std::sync::{Arc, RwLock};
 use std::sync::mpsc::{self, Sender, Receiver};
@@ -40,8 +40,8 @@ pub struct DataLink {
 }
 
 impl DataLink {
-    pub fn new(ri: &RouteInfo) -> (DataLink, Receiver<Ipv4Packet<'static>>) {
-        let (tx, rx): (Sender<Ipv4Packet>, Receiver<Ipv4Packet>) = mpsc::channel();
+    pub fn new(ri: &RouteInfo) -> (DataLink, Receiver<MutableIpv4Packet<'static>>) {
+        let (tx, rx): (Sender<MutableIpv4Packet>, Receiver<MutableIpv4Packet>) = mpsc::channel();
         let socket_addr: Vec<&str> = ri.socket_addr.split(':').collect();
         let host = match socket_addr[0] {
             "localhost" => "127.0.0.1",
@@ -166,7 +166,7 @@ impl DataLink {
         }
     }
 
-    pub fn start_receiver(&self, tx: Sender<Ipv4Packet<'static>>) {
+    pub fn start_receiver(&self, tx: Sender<MutableIpv4Packet<'static>>) {
         let sock = self.local_socket.try_clone().unwrap();
         unsafe {
             thread::spawn(move || recv_loop(sock, tx));
@@ -176,10 +176,10 @@ impl DataLink {
 
 static mut buf: [u8; 65536] = [0; 65536];
 
-pub unsafe fn recv_loop(sock: UdpSocket, tx: Sender<Ipv4Packet>) {
+pub unsafe fn recv_loop(sock: UdpSocket, tx: Sender<MutableIpv4Packet>) {
     loop {
         sock.recv_from(&mut buf).unwrap();
-        let pkt = Ipv4Packet::new(&buf).unwrap();
+        let pkt = MutableIpv4Packet::new(&mut buf).unwrap();
         tx.send(pkt).unwrap();
     }
 }

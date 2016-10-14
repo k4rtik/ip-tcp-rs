@@ -68,8 +68,8 @@ pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
             if (*dl_ctx.read().unwrap()).is_local_address(params.dst) {
                 let params = IpParams { src: params.src, ..params };
                 build_ipv4_header(&params, prot, ttl, id, &mut pkt_buf);
-                let pkt = Ipv4Packet::new(&pkt_buf).unwrap();
-                handle_packet(dl_ctx, rip_ctx, pkt);
+                let mut pkt = MutableIpv4Packet::new(&mut pkt_buf).unwrap();
+                handle_packet(dl_ctx, rip_ctx, &mut pkt);
                 Ok(())
             } else {
                 match (*rip_ctx.read().unwrap()).get_next_hop(params.dst) {
@@ -90,8 +90,8 @@ pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
                         };
                         debug!{"{:?}", params};
                         build_ipv4_header(&params, prot, ttl, id, &mut pkt_buf);
-                        let pkt = Ipv4Packet::new(&pkt_buf).unwrap();
-                        (*dl_ctx.read().unwrap()).send_packet(params.src, pkt)
+                        let pkt = MutableIpv4Packet::new(&mut pkt_buf).unwrap();
+                        (*dl_ctx.read().unwrap()).send_packet(params.src, pkt.to_immutable())
                     }
                     None => Err("Destination unreachable!".to_string()),
                 }
@@ -110,8 +110,8 @@ pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
                     };
                     debug!{"{:?}", params};
                     build_ipv4_header(&params, prot, ttl, id, &mut pkt_buf);
-                    let pkt = Ipv4Packet::new(&pkt_buf).unwrap();
-                    (*dl_ctx.read().unwrap()).send_packet(params.src, pkt)
+                    let pkt = MutableIpv4Packet::new(&mut pkt_buf).unwrap();
+                    (*dl_ctx.read().unwrap()).send_packet(params.src, pkt.to_immutable())
                 }
                 None => Err("No interface matching dst found!".to_string()),
             }
@@ -124,14 +124,16 @@ pub fn recv(mut buf: &mut Vec<u8>, prot: u8) -> Result<IpParams, String> {
     Err("Nothing here".to_string())
 }
 
-fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<RipCtx>>, pkt: Ipv4Packet) {
+fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>,
+                 rip_ctx: &Arc<RwLock<RipCtx>>,
+                 pkt: &mut MutableIpv4Packet) {
     // TODO check for fragmentation
     if pkt.get_checksum() == ipv4::checksum(&pkt.to_immutable()) {
         let dst = pkt.get_destination();
         if (*dl_ctx.read().unwrap()).is_local_address(dst) {
             match pkt.get_next_level_protocol() {
                 IpNextHeaderProtocol(0) => {
-                    print_pkt_contents(pkt);
+                    print_pkt_contents(pkt.to_immutable());
                 }
                 IpNextHeaderProtocol(200) => {
                     rip::pkt_handler(rip_ctx,
@@ -140,7 +142,7 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<RipCtx>>, 
                                      IpParams {
                                          src: pkt.get_source(),
                                          dst: pkt.get_destination(),
-                                         len: get_ipv4_payload_length(&pkt),
+                                         len: get_ipv4_payload_length(&pkt.to_immutable()),
                                          tos: 0, // XXX hardcoded, incorrect
                                          opt: pkt.get_options(),
                                      });
@@ -148,11 +150,22 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<RipCtx>>, 
                 _ => error!("Unsupported packet!"),
             }
         } else {
-            info!("Forwarding to next hop");
-            // TODO decrease TTL
+            // info!("Forwarding to next hop");
             match (*rip_ctx.read().unwrap()).get_next_hop(dst) {
-                Some(hop) => (*dl_ctx.read().unwrap()).send_packet(hop, pkt).unwrap(),
-                None => error!("No route to {}", dst),
+                Some(hop) => {
+                    if pkt.get_ttl() > 1 {
+                        let old_ttl = pkt.get_ttl();
+                        pkt.set_ttl(old_ttl);
+                        let cksum = ipv4::checksum(&pkt.to_immutable());
+                        pkt.set_checksum(cksum);
+                        (*dl_ctx.read().unwrap())
+                            .send_packet(hop, pkt.to_immutable())
+                            .unwrap()
+                    } else {
+                        warn!("TTL reached 0, destroying packet");
+                    }
+                }
+                None => warn!("No route to {}", dst),
             }
         }
     } else {
@@ -162,10 +175,10 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<RipCtx>>, 
 
 pub fn start_ip_module(dl_ctx: &Arc<RwLock<DataLink>>,
                        rip_ctx: &Arc<RwLock<RipCtx>>,
-                       rx: Receiver<Ipv4Packet>) {
+                       rx: Receiver<MutableIpv4Packet>) {
     loop {
-        let pkt = rx.recv().unwrap();
-        handle_packet(dl_ctx, rip_ctx, pkt);
+        let mut pkt = rx.recv().unwrap();
+        handle_packet(dl_ctx, rip_ctx, &mut pkt);
     }
 }
 
