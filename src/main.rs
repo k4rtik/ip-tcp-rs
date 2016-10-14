@@ -150,8 +150,14 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
                                 tos: 0,
                                 opt: vec![],
                             };
-                            let res =
-                                ip::send(&dl_ctx, &rip_ctx, ip_params, proto, 16, message, 0, true);
+                            let res = ip::send(&dl_ctx,
+                                               Some(&rip_ctx),
+                                               ip_params,
+                                               proto,
+                                               16,
+                                               message,
+                                               0,
+                                               true);
                             match res {
                                 Ok(_) => info!("Message sent succesfully"),
                                 Err(str) => error!("{}", str),

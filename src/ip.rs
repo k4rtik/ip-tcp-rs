@@ -49,7 +49,7 @@ fn build_ipv4_header(params: &IpParams, prot: u8, ttl: u8, id: u16, packet: &mut
 
 /// conforms to SEND interface described in RFC 791 pg. 32
 pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
-            rip_ctx: &Arc<RwLock<RipCtx>>,
+            rip: Option<&Arc<RwLock<RipCtx>>>,
             params: IpParams,
             prot: u8,
             ttl: u8,
@@ -62,38 +62,27 @@ pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
     }
     let mut pkt_buf = vec![0u8; IPV4_HEADER_LEN];
     pkt_buf.append(&mut payload);
-    if (*dl_ctx.read().unwrap()).is_local_address(params.dst) {
-        let params = IpParams { src: params.src, ..params };
-        build_ipv4_header(&params, prot, ttl, id, &mut pkt_buf);
-        let pkt = Ipv4Packet::new(&pkt_buf).unwrap();
-        handle_packet(dl_ctx, rip_ctx, pkt);
-        Ok(())
-    } else {
-        match (*rip_ctx.read().unwrap()).get_next_hop(params.dst) {
-            Some(next_hop) => {
-                let params = IpParams {
-                    src: if params.src.is_loopback() {
-                        match (*dl_ctx.read().unwrap()).get_interface_by_src(next_hop) {
-                            Some(iface) => iface.src,
-                            None => return Err("No interface matching next_hop found!".to_string()),
-                        }
-                    } else {
-                        params.src
-                    },
-                    ..params
-                };
-                debug!{"{:?}", params};
+
+    match rip {
+        Some(rip_ctx) => {
+            if (*dl_ctx.read().unwrap()).is_local_address(params.dst) {
+                let params = IpParams { src: params.src, ..params };
                 build_ipv4_header(&params, prot, ttl, id, &mut pkt_buf);
                 let pkt = Ipv4Packet::new(&pkt_buf).unwrap();
-                (*dl_ctx.read().unwrap()).send_packet(params.src, pkt)
-            }
-            None => {
-                match (*dl_ctx.read().unwrap()).get_interface_by_dst(params.dst) {
-                    Some(iface) => {
-
+                handle_packet(dl_ctx, rip_ctx, pkt);
+                Ok(())
+            } else {
+                match (*rip_ctx.read().unwrap()).get_next_hop(params.dst) {
+                    Some(next_hop) => {
                         let params = IpParams {
                             src: if params.src.is_loopback() {
-                                iface.src
+                                match (*dl_ctx.read().unwrap()).get_interface_by_src(next_hop) {
+                                    Some(iface) => iface.src,
+                                    None => {
+                                        return Err("No interface matching next_hop found!"
+                                            .to_string())
+                                    }
+                                }
                             } else {
                                 params.src
                             },
@@ -104,8 +93,27 @@ pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
                         let pkt = Ipv4Packet::new(&pkt_buf).unwrap();
                         (*dl_ctx.read().unwrap()).send_packet(params.src, pkt)
                     }
-                    None => Err("No interface matching dst found!".to_string()),
+                    None => Err("Destination unreachable!".to_string()),
                 }
+            }
+        }
+        None => {
+            match (*dl_ctx.read().unwrap()).get_interface_by_dst(params.dst) {
+                Some(iface) => {
+                    let params = IpParams {
+                        src: if params.src.is_loopback() {
+                            iface.src
+                        } else {
+                            params.src
+                        },
+                        ..params
+                    };
+                    debug!{"{:?}", params};
+                    build_ipv4_header(&params, prot, ttl, id, &mut pkt_buf);
+                    let pkt = Ipv4Packet::new(&pkt_buf).unwrap();
+                    (*dl_ctx.read().unwrap()).send_packet(params.src, pkt)
+                }
+                None => Err("No interface matching dst found!".to_string()),
             }
         }
     }

@@ -223,7 +223,7 @@ fn send_routing_table(rip_ctx: &Arc<RwLock<RipCtx>>,
     };
     debug!("SENDING RIP: {:?}", rip_pkt);
     let res = ip::send(dl_ctx,
-                       rip_ctx,
+                       None,
                        ip_params,
                        RIP_PROT,
                        16, // TTL
@@ -251,7 +251,7 @@ pub fn start_rip_module(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<Rip
         };
         debug!("SENDING RIP REQUEST: {:?}", rip_pkt);
         let res = ip::send(&dl_ctx,
-                           &rip_ctx,
+                           None,
                            ip_params,
                            RIP_PROT,
                            16, // TTL
@@ -263,6 +263,7 @@ pub fn start_rip_module(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<Rip
             Err(str) => error!("{}", str),
         }
     }
+
     loop {
 	(*rip_ctx.write().unwrap()).timeout_old_entries();
         let interfaces = (*dl_ctx.read().unwrap()).get_interfaces();
