@@ -91,6 +91,8 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
                             for r in routes {
                                 if r.cost < rip::INFINITY {
                                     println!("{}\t{}\t{}", r.dst, r.src, r.cost);
+                                } else {
+                                    info!("{}\t{}\t{}", r.dst, r.src, r.cost);
                                 }
                             }
                         } else {
