@@ -92,6 +92,81 @@ impl RipCtx {
         self.update_routing_table(dl_ctx, entries);
     }
 
+    fn get_and_unmark_updated_routes(&mut self) -> Vec<Route> {
+        let mut ret: Vec<Route> = Vec::new();
+        for rentry in self.routing_table.iter_mut() {
+            if rentry.route_changed {
+                rentry.route_changed = false;
+                ret.push(Route {
+                    dst: rentry.dst,
+                    src: rentry.next_hop,
+                    cost: rentry.metric,
+                });
+            }
+        }
+        ret
+    }
+
+
+    fn send_triggered_updates(&mut self, dl_ctx: &Arc<RwLock<DataLink>>) {
+        let mut rip_buf = vec![0u8; RIP_MAX_SIZE];
+
+        let entries = self.get_and_unmark_updated_routes();
+        let num_entries = entries.len();
+
+        // build rip_pkt
+        {
+            let mut rip_pkt = MutableRipPacket::new(&mut rip_buf).unwrap();
+
+            rip_pkt.set_command(2);
+            rip_pkt.set_num_entries(num_entries as u16);
+        }
+
+        let mut idx = 4;
+        // build rip_entry_pkt
+        {
+            let mut entry_id = 0;
+            while entry_id < num_entries {
+                let mut ripe_pkt = MutableRipEntryPacket::new(&mut rip_buf[idx..]).unwrap();
+
+                let ref entry = entries[entry_id];
+
+                ripe_pkt.set_cost(entry.cost as u32);
+                ripe_pkt.set_address(entry.dst);
+
+                entry_id += 1;
+                idx += 8;
+            }
+        }
+
+        let pkt_size = idx;
+        let rip_pkt = RipPacket::new(&rip_buf).unwrap();
+
+        let interfaces = (*dl_ctx.read().unwrap()).get_interfaces();
+        for iface in interfaces {
+            let ip_params = ip::IpParams {
+                src: Ipv4Addr::new(127, 0, 0, 1),
+                dst: iface.dst,
+                len: pkt_size,
+                tos: 0,
+                opt: vec![],
+            };
+            debug!("SENDING TRIGGERED UPDATE: {:?}", rip_pkt);
+            let res = ip::send(dl_ctx,
+                               None,
+                               ip_params,
+                               RIP_PROT,
+                               16, // TTL
+                               rip_pkt.packet().to_vec(),
+                               0,
+                               true);
+            match res {
+                Ok(_) => info!("Triggered update sent succesfully on {:?}", iface.dst),
+                Err(str) => error!("{}", str),
+            }
+        }
+    }
+
     pub fn update_routing_table(&mut self, dl_ctx: &Arc<RwLock<DataLink>>, routes: Vec<Route>) {
         debug!{"Received routes for update: {:?}", routes};
         for route in routes {
@@ -143,6 +218,7 @@ impl RipCtx {
                 error!("dst: {} is local or global", route.dst);
             }
         }
+        self.send_triggered_updates(dl_ctx);
     }
 
     pub fn get_routes(&self) -> Vec<Route> {
