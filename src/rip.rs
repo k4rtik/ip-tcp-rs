@@ -95,7 +95,7 @@ impl RipCtx {
 
     fn get_and_unmark_updated_routes(&mut self) -> Vec<Route> {
         let mut ret: Vec<Route> = Vec::new();
-        for rentry in self.routing_table.iter_mut() {
+        for rentry in &mut self.routing_table {
             if rentry.route_changed {
                 rentry.route_changed = false;
                 ret.push(Route {
@@ -131,7 +131,7 @@ impl RipCtx {
             while entry_id < num_entries {
                 let mut ripe_pkt = MutableRipEntryPacket::new(&mut rip_buf[idx..]).unwrap();
 
-                let ref entry = entries[entry_id];
+                let entry = &entries[entry_id];
 
                 ripe_pkt.set_cost(entry.cost as u32);
                 ripe_pkt.set_address(entry.dst);
@@ -246,7 +246,7 @@ impl RipCtx {
     }
 
     pub fn expire_old_entries(&mut self) {
-        for rentry in self.routing_table.iter_mut() {
+        for rentry in &mut self.routing_table {
             let duration = SystemTime::now().duration_since(rentry.timer).unwrap();
             if duration.as_secs() >= RIP_TIMEOUT {
                 rentry.timer = SystemTime::now();
@@ -259,26 +259,25 @@ impl RipCtx {
 fn build_rip_entry_pkt(rip_ctx: &Arc<RwLock<RipCtx>>, entry_id: usize, packet: &mut [u8]) {
     let mut ripe_pkt = MutableRipEntryPacket::new(packet).unwrap();
 
-    let ref entry = (*rip_ctx.read().unwrap()).get_routes()[entry_id];
+    let entry = &(*rip_ctx.read().unwrap()).get_routes()[entry_id];
 
     ripe_pkt.set_cost(entry.cost as u32);
     ripe_pkt.set_address(entry.dst);
 }
 
 fn build_rip_pkt(rip_ctx: &Arc<RwLock<RipCtx>>, packet: &mut [u8], request: bool) -> usize {
-    let mut num_entries = (*rip_ctx.read().unwrap()).get_num_entries();
-    if request {
+    let num_entries = if request {
         let mut rip_pkt = MutableRipPacket::new(packet).unwrap();
-
         rip_pkt.set_command(1);
         rip_pkt.set_num_entries(0);
-        num_entries = 0;
+        0
     } else {
         let mut rip_pkt = MutableRipPacket::new(packet).unwrap();
-
         rip_pkt.set_command(2);
-        rip_pkt.set_num_entries(num_entries as u16);
-    }
+        let ne = (*rip_ctx.read().unwrap()).get_num_entries();
+        rip_pkt.set_num_entries(ne as u16);
+        ne
+    };
 
     let mut idx = 4;
     let mut entry_id = 0;
@@ -333,7 +332,7 @@ pub fn start_rip_module(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<Rip
             opt: vec![],
         };
         debug!("SENDING RIP REQUEST: {:?}", rip_pkt);
-        let res = ip::send(&dl_ctx,
+        let res = ip::send(dl_ctx,
                            None,
                            ip_params,
                            RIP_PROT,

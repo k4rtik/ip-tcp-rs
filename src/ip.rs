@@ -46,6 +46,8 @@ fn build_ipv4_header(params: &IpParams, prot: u8, ttl: u8, id: u16, packet: &mut
 }
 
 /// conforms to SEND interface described in RFC 791 pg. 32
+#[allow(too_many_arguments)]
+#[allow(unknown_lints)]
 pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
             rip: Option<&Arc<RwLock<RipCtx>>>,
             params: IpParams,
@@ -117,11 +119,7 @@ pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
     }
 }
 
-/// conforms to RECV interface described in RFC 791 pg. 32
-pub fn recv(mut buf: &mut Vec<u8>, prot: u8) -> Result<IpParams, String> {
-    Err("Nothing here".to_string())
-}
-
+/// Any registered handler should conform to RECV interface described in RFC 791 pg. 32
 fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>,
                  rip_ctx: &Arc<RwLock<RipCtx>>,
                  pkt: &mut MutableIpv4Packet) {

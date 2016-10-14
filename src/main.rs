@@ -86,7 +86,7 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
                     }
                     "routes" => {
                         let routes = (*rip_ctx.read().unwrap()).get_routes();
-                        if routes.len() > 0 {
+                        if !routes.is_empty() {
                             println!("dst\t\tsrc\t\tcost");
                             for r in routes {
                                 if r.cost < rip::INFINITY {
