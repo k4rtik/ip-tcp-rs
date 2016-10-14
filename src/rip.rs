@@ -12,6 +12,7 @@ use std::thread;
 const RIP_PERIOD: u64 = 5;
 const RIP_PROT: u8 = 200;
 const RIP_MAX_SIZE: usize = 2 + 2 + 64 * 8; // from given packet format
+const RIP_TIMEOUT: u64 = 12;
 
 #[derive(Debug, Clone)]
 pub struct Route {
@@ -156,6 +157,16 @@ impl RipCtx {
             })
             .collect()
     }
+
+    pub fn timeout_old_entries(&mut self) {
+	for r in self.routing_table.iter_mut() {
+		let duration = SystemTime::now().duration_since(r.timer).unwrap();
+		if duration.as_secs() >= RIP_TIMEOUT*60 {
+			r.timer = SystemTime::now();
+			r.metric = 16;
+		}
+	}
+    }
 }
 
 fn build_rip_entry_pkt(rip_ctx: &Arc<RwLock<RipCtx>>, entry_id: usize, packet: &mut [u8]) {
@@ -253,6 +264,7 @@ pub fn start_rip_module(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<Rip
         }
     }
     loop {
+	(*rip_ctx.write().unwrap()).timeout_old_entries();
         let interfaces = (*dl_ctx.read().unwrap()).get_interfaces();
         for iface in interfaces {
             send_routing_table(rip_ctx, dl_ctx, iface.dst);
