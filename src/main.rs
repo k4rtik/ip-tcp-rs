@@ -105,7 +105,7 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
                             match id {
                                 Ok(id) => {
                                     debug!("Taking read lock on DataLink");
-                                    (*dl_ctx.read().unwrap()).deactivate_interface(id);
+                                    (*dl_ctx.write().unwrap()).deactivate_interface(id);
                                     let interfaces = (*dl_ctx.read().unwrap()).get_interfaces();
                                     debug!("Taking write lock on RipCtx");
                                     (*rip_ctx.write().unwrap())
@@ -124,7 +124,7 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
                             match id {
                                 Ok(id) => {
                                     debug!("Taking read lock on DataLink");
-                                    (*dl_ctx.read().unwrap()).activate_interface(id);
+                                    (*dl_ctx.write().unwrap()).activate_interface(id);
                                     let interfaces = (*dl_ctx.read().unwrap()).get_interfaces();
                                     debug!("Taking write lock on RipCtx");
                                     (*rip_ctx.write().unwrap())

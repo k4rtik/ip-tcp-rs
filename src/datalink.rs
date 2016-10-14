@@ -3,7 +3,6 @@ use pnet::packet::ipv4::{MutableIpv4Packet, Ipv4Packet};
 
 use std::net::{Ipv4Addr, UdpSocket};
 use std::sync::mpsc::{self, Sender, Receiver};
-use std::sync::{Arc, RwLock};
 use std::thread;
 
 // TODO choose a better name for this struct
@@ -31,7 +30,7 @@ struct PrivInterface {
     socket_addr: String,
     dst: Ipv4Addr, // also serves as key to this interface
     src: Ipv4Addr,
-    enabled: Arc<RwLock<bool>>,
+    enabled: bool,
 }
 
 pub struct DataLink {
@@ -64,7 +63,7 @@ impl DataLink {
                         },
                         dst: iface.dst_vip,
                         src: iface.src_vip,
-                        enabled: Arc::new(RwLock::new(true)),
+                        enabled: true,
                     }
                 })
                 .collect(),
@@ -110,7 +109,7 @@ impl DataLink {
             Some(priv_iface) => priv_iface,
             None => panic!("Interface doesn't exist!"),
         };
-        if *priv_iface.enabled.read().unwrap() {
+        if priv_iface.enabled {
             let socket_addr = priv_iface.socket_addr.clone();
             let len = pkt.get_total_length() as usize;
             let sent_count = self.local_socket.send_to(&pkt.packet()[..len], &*socket_addr);
@@ -132,37 +131,29 @@ impl DataLink {
                 Interface {
                     dst: iface.dst,
                     src: iface.src,
-                    enabled: *iface.enabled.read().unwrap(),
+                    enabled: iface.enabled,
                 }
             })
             .collect()
     }
 
-    pub fn activate_interface(&self, id: usize) -> bool {
+    pub fn activate_interface(&mut self, id: usize) {
         if id >= self.interfaces.len() {
             println!("interface {} doesn't exist!", id);
-            false
-        } else if *self.interfaces[id].enabled.read().unwrap() {
+        } else if self.interfaces[id].enabled {
             println!("interface {} is already enabled!", id);
-            true
         } else {
-            let mut e = self.interfaces[id].enabled.write().unwrap();
-            *e = true;
-            true
+            self.interfaces[id].enabled = true;
         }
     }
 
-    pub fn deactivate_interface(&self, id: usize) -> bool {
+    pub fn deactivate_interface(&mut self, id: usize) {
         if id >= self.interfaces.len() {
             println!("interface {} doesn't exist!", id);
-            false
-        } else if *self.interfaces[id].enabled.read().unwrap() {
-            let mut e = self.interfaces[id].enabled.write().unwrap();
-            *e = false;
-            true
+        } else if self.interfaces[id].enabled {
+            self.interfaces[id].enabled = false;
         } else {
             println!("interface {} is already disabled!", id);
-            false
         }
     }
 
