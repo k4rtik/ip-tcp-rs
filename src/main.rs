@@ -91,7 +91,9 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
                         if routes.len() > 0 {
                             println!("dst\t\tsrc\t\tcost");
                             for r in routes {
-                                println!("{}\t{}\t{}", r.dst, r.src, r.cost);
+                                if r.cost < 16 {
+                                    println!("{}\t{}\t{}", r.dst, r.src, r.cost);
+                                }
                             }
                         } else {
                             println!("No routes found!");
