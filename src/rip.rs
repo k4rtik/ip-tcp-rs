@@ -10,9 +10,9 @@ use datalink::{RouteInfo, DataLink};
 use ip;
 
 const RIP_PERIOD: u64 = 5;
+const RIP_TIMEOUT: u64 = 12;
 const RIP_PROT: u8 = 200;
 const RIP_MAX_SIZE: usize = 2 + 2 + 64 * 8; // from given packet format
-const RIP_TIMEOUT: u64 = 12;
 pub const INFINITY: u8 = 16;
 
 #[derive(Debug, Clone)]
@@ -94,6 +94,7 @@ impl RipCtx {
                     rentry.route_changed = true;
                 }
             }
+            // TODO request RIP
         }
         self.send_triggered_updates(dl_ctx, None);
     }
@@ -231,7 +232,7 @@ impl RipCtx {
                     warn!("cost is invalid: {}", route.cost);
                 }
             } else {
-                warn!("dst: {} is local or global", route.dst);
+                trace!("dst: {} is local or global", route.dst);
             }
         }
         self.send_triggered_updates(dl_ctx, source);
