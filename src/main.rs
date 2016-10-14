@@ -45,8 +45,8 @@ fn parse_lnx(filename: &str) -> RouteInfo {
         })
         .collect();
 
-    debug!("{:?}", socket_addr);
-    debug!("{:?}", interfaces);
+    trace!("{:?}", socket_addr);
+    trace!("{:?}", interfaces);
 
     RouteInfo {
         socket_addr: socket_addr,
@@ -58,7 +58,7 @@ fn is_ip(ip_addr: &str) -> bool {
     match Ipv4Addr::from_str(ip_addr) {
         Ok(_) => true,
         Err(_) => {
-            debug!("{:?}", ip_addr);
+            trace!("{:?}", ip_addr);
             false
         }
     }
@@ -162,7 +162,7 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
                                                true);
                             match res {
                                 Ok(_) => info!("Message sent succesfully"),
-                                Err(str) => error!("{}", str),
+                                Err(str) => warn!("{}", str),
                             }
                         }
                     }

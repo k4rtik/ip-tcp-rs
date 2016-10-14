@@ -88,7 +88,7 @@ pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
                             },
                             ..params
                         };
-                        debug!{"{:?}", params};
+                        trace!{"{:?}", params};
                         build_ipv4_header(&params, prot, ttl, id, &mut pkt_buf);
                         let pkt = MutableIpv4Packet::new(&mut pkt_buf).unwrap();
                         (*dl_ctx.read().unwrap()).send_packet(params.src, pkt.to_immutable())
@@ -108,7 +108,7 @@ pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
                         },
                         ..params
                     };
-                    debug!{"{:?}", params};
+                    trace!{"{:?}", params};
                     build_ipv4_header(&params, prot, ttl, id, &mut pkt_buf);
                     let pkt = MutableIpv4Packet::new(&mut pkt_buf).unwrap();
                     (*dl_ctx.read().unwrap()).send_packet(params.src, pkt.to_immutable())
@@ -147,7 +147,7 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>,
                                          opt: pkt.get_options(),
                                      });
                 }
-                _ => error!("Unsupported packet!"),
+                _ => warn!("Unsupported packet!"),
             }
         } else {
             // info!("Forwarding to next hop");
@@ -169,7 +169,7 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>,
             }
         }
     } else {
-        error!("Invalid packet, discarding");
+        warn!("Invalid packet, discarding");
     }
 }
 

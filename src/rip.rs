@@ -162,7 +162,7 @@ impl RipCtx {
                                    true);
                 match res {
                     Ok(_) => info!("Triggered update sent succesfully on {:?}", iface.dst),
-                    Err(str) => error!("{}", str),
+                    Err(str) => warn!("{}", str),
                 }
             }
         }
@@ -216,10 +216,10 @@ impl RipCtx {
                     }
                     debug!("AFTER routing_table: {:?}", self.routing_table);
                 } else {
-                    error!("cost is invalid: {}", route.cost);
+                    warn!("cost is invalid: {}", route.cost);
                 }
             } else {
-                error!("dst: {} is local or global", route.dst);
+                warn!("dst: {} is local or global", route.dst);
             }
         }
         self.send_triggered_updates(dl_ctx, source);
@@ -256,8 +256,6 @@ fn build_rip_entry_pkt(rip_ctx: &Arc<RwLock<RipCtx>>, entry_id: usize, packet: &
 
     ripe_pkt.set_cost(entry.cost as u32);
     ripe_pkt.set_address(entry.dst);
-
-    // debug!("{:?}", ripe_pkt);
 }
 
 fn build_rip_pkt(rip_ctx: &Arc<RwLock<RipCtx>>, packet: &mut [u8], request: bool) -> usize {
@@ -283,8 +281,6 @@ fn build_rip_pkt(rip_ctx: &Arc<RwLock<RipCtx>>, packet: &mut [u8], request: bool
         idx += 8;
     }
 
-    // rip_pkt.set_entries(&packet[2..]);
-    debug!("{:?}", RipPacket::new(packet).unwrap());
     idx
 }
 
@@ -312,7 +308,7 @@ fn send_routing_table(rip_ctx: &Arc<RwLock<RipCtx>>,
                        true);
     match res {
         Ok(_) => info!("RIP update sent succesfully on {:?}", dst),
-        Err(str) => error!("{}", str),
+        Err(str) => warn!("{}", str),
     }
 }
 
@@ -340,7 +336,7 @@ pub fn start_rip_module(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<Rip
                            true);
         match res {
             Ok(_) => info!("RIP request sent succesfully on {:?}", iface.dst),
-            Err(str) => error!("{}", str),
+            Err(str) => warn!("{}", str),
         }
     }
 
@@ -386,9 +382,9 @@ pub fn pkt_handler(rip_ctx: &Arc<RwLock<RipCtx>>,
                                                                      .collect(),
                                                                  Some(ip_params.src));
             } else {
-                error!("RIP packet came from non-neighbor: {}", ip_params.src);
+                warn!("RIP packet came from non-neighbor: {}", ip_params.src);
             }
         }
-        _ => error!("Invalid RIP packet, discarding"),
+        _ => warn!("Invalid RIP packet, discarding"),
     }
 }

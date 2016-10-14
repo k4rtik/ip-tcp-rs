@@ -105,7 +105,7 @@ impl DataLink {
 
     // to be called only by the IP Layer
     pub fn send_packet(&self, next_hop: Ipv4Addr, pkt: Ipv4Packet) -> Result<(), String> {
-        debug!("{:?}", next_hop);
+        trace!("{:?}", next_hop);
         let priv_iface = match (&self.interfaces).into_iter().find(|iface| iface.src == next_hop) {
             Some(priv_iface) => priv_iface,
             None => panic!("Interface doesn't exist!"),
@@ -114,7 +114,7 @@ impl DataLink {
             let socket_addr = priv_iface.socket_addr.clone();
             let len = pkt.get_total_length() as usize;
             let sent_count = self.local_socket.send_to(&pkt.packet()[..len], &*socket_addr);
-            debug!("{:?}", sent_count);
+            trace!("{:?}", sent_count);
             if sent_count.unwrap() > 0 {
                 Ok(())
             } else {
