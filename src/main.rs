@@ -91,7 +91,7 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
                         if routes.len() > 0 {
                             println!("dst\t\tsrc\t\tcost");
                             for r in routes {
-                                if r.cost < 16 {
+                                if r.cost < rip::INFINITY {
                                     println!("{}\t{}\t{}", r.dst, r.src, r.cost);
                                 }
                             }
@@ -156,7 +156,7 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
                                                Some(&rip_ctx),
                                                ip_params,
                                                proto,
-                                               16,
+                                               rip::INFINITY,
                                                message,
                                                0,
                                                true);

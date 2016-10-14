@@ -13,6 +13,7 @@ const RIP_PERIOD: u64 = 5;
 const RIP_PROT: u8 = 200;
 const RIP_MAX_SIZE: usize = 2 + 2 + 64 * 8; // from given packet format
 const RIP_TIMEOUT: u64 = 12;
+pub const INFINITY: u8 = 16;
 
 #[derive(Debug, Clone)]
 pub struct Route {
@@ -26,7 +27,7 @@ struct RouteEntry {
     dst: Ipv4Addr,
     next_hop: Ipv4Addr,
     // interface: Interface, // which physical interface for this route
-    metric: u8, // max 16, TODO create a new type
+    metric: u8,
     timer: SystemTime, // since last updated
     route_src: Ipv4Addr, // gateway that provided this route
     route_changed: bool,
@@ -56,7 +57,9 @@ impl RipCtx {
     }
 
     pub fn get_next_hop(&self, dst: Ipv4Addr) -> Option<Ipv4Addr> {
-        match self.routing_table.iter().find(|rentry| rentry.dst == dst && rentry.metric != 16) {
+        match self.routing_table
+            .iter()
+            .find(|rentry| rentry.dst == dst && rentry.metric != INFINITY) {
             Some(re) => Some(re.next_hop),
             None => None,
         }
@@ -83,7 +86,7 @@ impl RipCtx {
                 entries.push(Route {
                     src: rentry.next_hop,
                     dst: rentry.dst,
-                    cost: 16,
+                    cost: INFINITY,
                 });
             }
         }
@@ -156,7 +159,7 @@ impl RipCtx {
                                    None,
                                    ip_params,
                                    RIP_PROT,
-                                   16, // TTL
+                                   INFINITY,
                                    rip_pkt.packet().to_vec(),
                                    0,
                                    true);
@@ -175,9 +178,9 @@ impl RipCtx {
         debug!{"Received routes for update: {:?}", routes};
         for route in routes {
             if !route.dst.is_loopback() && !(*dl_ctx.read().unwrap()).is_local_address(route.dst) {
-                if route.cost < 17 {
+                if route.cost <= INFINITY {
                     let route = Route {
-                        cost: if route.cost + 1 < 16 {
+                        cost: if route.cost + 1 < INFINITY {
                             route.cost + 1
                         } else {
                             route.cost
@@ -199,7 +202,7 @@ impl RipCtx {
                             debug!("rentry: {:?}", rentry);
                         }
                         None => {
-                            if route.cost < 16 {
+                            if route.cost < INFINITY {
                                 info!("Adding new rentry");
                                 need_to_add = true;
                             }
@@ -247,7 +250,7 @@ impl RipCtx {
             let duration = SystemTime::now().duration_since(rentry.timer).unwrap();
             if duration.as_secs() >= RIP_TIMEOUT {
                 rentry.timer = SystemTime::now();
-                rentry.metric = 16;
+                rentry.metric = INFINITY;
             }
         }
     }
@@ -306,7 +309,7 @@ fn send_routing_table(rip_ctx: &Arc<RwLock<RipCtx>>,
                        None,
                        ip_params,
                        RIP_PROT,
-                       16, // TTL
+                       INFINITY,
                        rip_pkt.packet().to_vec(),
                        0,
                        true);
@@ -334,7 +337,7 @@ pub fn start_rip_module(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<Rip
                            None,
                            ip_params,
                            RIP_PROT,
-                           16, // TTL
+                           INFINITY,
                            rip_pkt.packet().to_vec(),
                            0,
                            true);
