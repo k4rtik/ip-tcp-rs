@@ -234,14 +234,14 @@ impl RipCtx {
             .collect()
     }
 
-    pub fn timeout_old_entries(&mut self) {
-	for r in self.routing_table.iter_mut() {
-		let duration = SystemTime::now().duration_since(r.timer).unwrap();
-		if duration.as_secs() >= RIP_TIMEOUT*60 {
-			r.timer = SystemTime::now();
-			r.metric = 16;
-		}
-	}
+    pub fn expire_old_entries(&mut self) {
+        for r in self.routing_table.iter_mut() {
+            let duration = SystemTime::now().duration_since(r.timer).unwrap();
+            if duration.as_secs() >= RIP_TIMEOUT * 60 {
+                r.timer = SystemTime::now();
+                r.metric = 16;
+            }
+        }
     }
 }
 
@@ -341,7 +341,7 @@ pub fn start_rip_module(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<Rip
     }
 
     loop {
-	(*rip_ctx.write().unwrap()).timeout_old_entries();
+        (*rip_ctx.write().unwrap()).expire_old_entries();
         let interfaces = (*dl_ctx.read().unwrap()).get_interfaces();
         for iface in interfaces {
             send_routing_table(rip_ctx, dl_ctx, iface.dst);
