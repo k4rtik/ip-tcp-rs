@@ -99,37 +99,39 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
                     }
                     "down" => {
                         if cmd_vec.len() != 2 {
-                            println!("Missing interface number!");
+                            println!("Missing interface id!");
                         } else {
-                            let tmp = cmd_vec[1].parse::<usize>();
-                            match tmp {
-                                Ok(interface) => {
-                                    (*dl_ctx.read().unwrap()).deactivate_interface(interface);
+                            let id = cmd_vec[1].parse::<usize>();
+                            match id {
+                                Ok(id) => {
+                                    debug!("Taking read lock on DataLink");
+                                    (*dl_ctx.read().unwrap()).deactivate_interface(id);
                                     let interfaces = (*dl_ctx.read().unwrap()).get_interfaces();
+                                    debug!("Taking write lock on RipCtx");
                                     (*rip_ctx.write().unwrap())
-                                        .toggle_interface_state(&dl_ctx,
-                                                                interfaces[interface].src,
-                                                                false);
+                                        .toggle_interface_state(&dl_ctx, interfaces[id].src, false);
+                                    debug!("Took interface down");
                                 }
-                                Err(_) => println!("Please mention the interface number!"),
+                                Err(e) => println!("Error: {}", e),
                             }
                         }
                     }
                     "up" => {
                         if cmd_vec.len() != 2 {
-                            println!("Missing interface number!");
+                            println!("Missing interface id!");
                         } else {
-                            let tmp = cmd_vec[1].parse::<usize>();
-                            match tmp {
-                                Ok(interface) => {
-                                    (*dl_ctx.read().unwrap()).activate_interface(interface);
+                            let id = cmd_vec[1].parse::<usize>();
+                            match id {
+                                Ok(id) => {
+                                    debug!("Taking read lock on DataLink");
+                                    (*dl_ctx.read().unwrap()).activate_interface(id);
                                     let interfaces = (*dl_ctx.read().unwrap()).get_interfaces();
+                                    debug!("Taking write lock on RipCtx");
                                     (*rip_ctx.write().unwrap())
-                                        .toggle_interface_state(&dl_ctx,
-                                                                interfaces[interface].src,
-                                                                true);
+                                        .toggle_interface_state(&dl_ctx, interfaces[id].src, true);
+                                    debug!("Took interface up");
                                 }
-                                Err(_) => println!("Please mention the interface number!"),
+                                Err(e) => println!("Error: {}", e),
                             }
                         }
                     }

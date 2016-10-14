@@ -71,26 +71,31 @@ impl RipCtx {
 
     pub fn toggle_interface_state(&mut self,
                                   dl_ctx: &Arc<RwLock<DataLink>>,
-                                  src: Ipv4Addr,
+                                  local_ip: Ipv4Addr,
                                   status: bool) {
-        let mut entries = Vec::<Route>::new();
-        {
-            let rentry = self.routing_table.iter().find(|rentry| rentry.next_hop == src).unwrap();
-            if status {
-                entries.push(Route {
-                    src: rentry.next_hop,
-                    dst: rentry.dst,
-                    cost: 0,
-                });
-            } else {
-                entries.push(Route {
-                    src: rentry.next_hop,
-                    dst: rentry.dst,
-                    cost: INFINITY,
-                });
+        if !status {
+            // taking down local interface
+            for rentry in &mut self.routing_table {
+                if rentry.next_hop == local_ip {
+                    rentry.metric = INFINITY;
+                    rentry.timer = SystemTime::now();
+                    rentry.route_src = local_ip;
+                    rentry.route_changed = true;
+                }
+            }
+        } else {
+            // enabling interface
+            for rentry in &mut self.routing_table {
+                if rentry.dst == local_ip {
+                    // TODO for non-local dst, RIP shouldn't update if local interface is down
+                    rentry.metric = 0;
+                    rentry.timer = SystemTime::now();
+                    rentry.route_src = local_ip;
+                    rentry.route_changed = true;
+                }
             }
         }
-        self.update_routing_table(dl_ctx, entries, None);
+        self.send_triggered_updates(dl_ctx, None);
     }
 
     fn get_and_unmark_updated_routes(&mut self) -> Vec<Route> {
