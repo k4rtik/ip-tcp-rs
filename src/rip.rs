@@ -48,7 +48,7 @@ impl RipCtx {
                         metric: 0,
                         timer: SystemTime::now(),
                         route_src: iface.src_vip,
-                        route_changed: true,
+                        route_changed: false,
                     }
                 })
                 .collect(),
