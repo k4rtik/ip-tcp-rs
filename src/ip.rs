@@ -2,6 +2,7 @@ use pnet::packet::Packet;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use pnet::packet::ipv4::{self, MutableIpv4Packet, Ipv4Packet, Ipv4Option};
 
+use std::io::{self, Write};
 use std::net::Ipv4Addr;
 use std::str;
 use std::sync::mpsc::Receiver;
@@ -192,4 +193,6 @@ fn print_pkt_contents(pkt: Ipv4Packet) {
     println!("\ttos: 0\n\tid: {}\n\tproto: 0", pkt.get_identification());
     let message = Vec::from(&pkt.payload()[..len]);
     println!("Payload: {}", String::from_utf8(message).unwrap());
+    print!("> ");
+    io::stdout().flush().unwrap();
 }
