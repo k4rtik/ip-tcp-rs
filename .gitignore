@@ -10,3 +10,4 @@
 # Custom
 *.lnx
 bootstrap/bin/util/node
+node
