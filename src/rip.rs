@@ -183,6 +183,19 @@ impl RipCtx {
                                 source: Option<Ipv4Addr>) {
         debug!{"Received routes for update: {:?}", routes};
         for route in routes {
+            match (*dl_ctx.read().unwrap()).get_interface_by_dst(route.src) {
+                Some(iface) => {
+                    if !iface.enabled {
+                        info!("iface for this route is down: {:?}", route);
+                        continue;
+                    }
+                }
+                None => {
+                    warn!("Received a route with no matching local interface: {:?}",
+                          route);
+                    continue;
+                }
+            };
             if !route.dst.is_loopback() && !(*dl_ctx.read().unwrap()).is_local_address(route.dst) {
                 if route.cost <= INFINITY {
                     let route = Route {
@@ -253,10 +266,15 @@ impl RipCtx {
 
     pub fn expire_old_entries(&mut self) {
         for rentry in &mut self.routing_table {
-            let duration = SystemTime::now().duration_since(rentry.timer).unwrap();
-            if duration.as_secs() >= RIP_TIMEOUT {
+            if rentry.next_hop == rentry.dst {
                 rentry.timer = SystemTime::now();
-                rentry.metric = INFINITY;
+            } else {
+                let duration = SystemTime::now().duration_since(rentry.timer).unwrap();
+                if duration.as_secs() >= RIP_TIMEOUT {
+                    rentry.timer = SystemTime::now();
+                    rentry.metric = INFINITY;
+                    rentry.route_changed = true;
+                }
             }
         }
     }
