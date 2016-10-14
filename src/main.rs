@@ -109,9 +109,9 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
                                     (*dl_ctx.read().unwrap()).deactivate_interface(interface);
                                     let interfaces = (*dl_ctx.read().unwrap()).get_interfaces();
                                     (*rip_ctx.write().unwrap())
-                                        .update_route_status(&dl_ctx,
-                                                             interfaces[interface].src,
-                                                             false);
+                                        .toggle_interface_state(&dl_ctx,
+                                                                interfaces[interface].src,
+                                                                false);
                                 }
                                 Err(_) => println!("Please mention the interface number!"),
                             }
@@ -127,9 +127,9 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
                                     (*dl_ctx.read().unwrap()).activate_interface(interface);
                                     let interfaces = (*dl_ctx.read().unwrap()).get_interfaces();
                                     (*rip_ctx.write().unwrap())
-                                        .update_route_status(&dl_ctx,
-                                                             interfaces[interface].src,
-                                                             true);
+                                        .toggle_interface_state(&dl_ctx,
+                                                                interfaces[interface].src,
+                                                                true);
                                 }
                                 Err(_) => println!("Please mention the interface number!"),
                             }

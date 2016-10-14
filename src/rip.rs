@@ -66,12 +66,10 @@ impl RipCtx {
         self.routing_table.len()
     }
 
-    pub fn send_routing_update(&self) {}
-
-    pub fn update_route_status(&mut self,
-                               dl_ctx: &Arc<RwLock<DataLink>>,
-                               src: Ipv4Addr,
-                               status: bool) {
+    pub fn toggle_interface_state(&mut self,
+                                  dl_ctx: &Arc<RwLock<DataLink>>,
+                                  src: Ipv4Addr,
+                                  status: bool) {
         let mut entries = Vec::<Route>::new();
         {
             let rentry = self.routing_table.iter().find(|rentry| rentry.next_hop == src).unwrap();
