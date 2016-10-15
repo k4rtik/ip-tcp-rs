@@ -264,7 +264,7 @@ impl RipCtx {
             .collect()
     }
 
-    pub fn expire_old_entries(&mut self) {
+    fn expire_old_entries(&mut self) {
         for rentry in &mut self.routing_table {
             if rentry.next_hop == rentry.dst {
                 rentry.timer = SystemTime::now();
