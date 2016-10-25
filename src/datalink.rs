@@ -137,23 +137,29 @@ impl DataLink {
             .collect()
     }
 
-    pub fn activate_interface(&mut self, id: usize) {
+    pub fn activate_interface(&mut self, id: usize) -> bool {
         if id >= self.interfaces.len() {
             println!("interface {} doesn't exist!", id);
+            false
         } else if self.interfaces[id].enabled {
             println!("interface {} is already enabled!", id);
+            false
         } else {
             self.interfaces[id].enabled = true;
+            true
         }
     }
 
-    pub fn deactivate_interface(&mut self, id: usize) {
+    pub fn deactivate_interface(&mut self, id: usize) -> bool {
         if id >= self.interfaces.len() {
             println!("interface {} doesn't exist!", id);
+            false
         } else if self.interfaces[id].enabled {
             self.interfaces[id].enabled = false;
+            true
         } else {
             println!("interface {} is already disabled!", id);
+            false
         }
     }
 
