@@ -125,48 +125,52 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>,
                  rip_ctx: &Arc<RwLock<RipCtx>>,
                  pkt: &mut MutableIpv4Packet) {
     // TODO check for fragmentation
-    if pkt.get_checksum() == ipv4::checksum(&pkt.to_immutable()) {
-        let dst = pkt.get_destination();
-        if (*dl_ctx.read().unwrap()).is_local_address(dst) {
-            match pkt.get_next_level_protocol() {
-                IpNextHeaderProtocol(0) => {
-                    print_pkt_contents(pkt.to_immutable());
+    let dst = pkt.get_destination();
+    let iface = (*dl_ctx.read().unwrap()).get_interface_by_src(dst).unwrap();
+    if iface.enabled {
+        if pkt.get_checksum() == ipv4::checksum(&pkt.to_immutable()) {
+            let dst = pkt.get_destination();
+            if (*dl_ctx.read().unwrap()).is_local_address(dst) {
+                match pkt.get_next_level_protocol() {
+                    IpNextHeaderProtocol(0) => {
+                        print_pkt_contents(pkt.to_immutable());
+                    }
+                    IpNextHeaderProtocol(200) => {
+                        rip::pkt_handler(rip_ctx,
+                                         dl_ctx,
+                                         pkt.payload(),
+                                         IpParams {
+                                             src: pkt.get_source(),
+                                             dst: pkt.get_destination(),
+                                             len: get_ipv4_payload_length(&pkt.to_immutable()),
+                                             tos: 0, // XXX hardcoded, incorrect
+                                             opt: pkt.get_options(),
+                                         });
+                    }
+                    _ => warn!("Unsupported packet!"),
                 }
-                IpNextHeaderProtocol(200) => {
-                    rip::pkt_handler(rip_ctx,
-                                     dl_ctx,
-                                     pkt.payload(),
-                                     IpParams {
-                                         src: pkt.get_source(),
-                                         dst: pkt.get_destination(),
-                                         len: get_ipv4_payload_length(&pkt.to_immutable()),
-                                         tos: 0, // XXX hardcoded, incorrect
-                                         opt: pkt.get_options(),
-                                     });
+            } else {
+                // info!("Forwarding to next hop");
+                match (*rip_ctx.read().unwrap()).get_next_hop(dst) {
+                    Some(hop) => {
+                        if pkt.get_ttl() > 0 {
+                            let old_ttl = pkt.get_ttl();
+                            pkt.set_ttl(old_ttl);
+                            let cksum = ipv4::checksum(&pkt.to_immutable());
+                            pkt.set_checksum(cksum);
+                            (*dl_ctx.read().unwrap())
+                                .send_packet(hop, pkt.to_immutable())
+                                .unwrap()
+                        } else {
+                            warn!("TTL reached 0, destroying packet");
+                        }
+                    }
+                    None => warn!("No route to {}", dst),
                 }
-                _ => warn!("Unsupported packet!"),
             }
         } else {
-            // info!("Forwarding to next hop");
-            match (*rip_ctx.read().unwrap()).get_next_hop(dst) {
-                Some(hop) => {
-                    if pkt.get_ttl() > 0 {
-                        let old_ttl = pkt.get_ttl();
-                        pkt.set_ttl(old_ttl);
-                        let cksum = ipv4::checksum(&pkt.to_immutable());
-                        pkt.set_checksum(cksum);
-                        (*dl_ctx.read().unwrap())
-                            .send_packet(hop, pkt.to_immutable())
-                            .unwrap()
-                    } else {
-                        warn!("TTL reached 0, destroying packet");
-                    }
-                }
-                None => warn!("No route to {}", dst),
-            }
+            warn!("Invalid packet, discarding");
         }
-    } else {
-        warn!("Invalid packet, discarding");
     }
 }
 
