@@ -171,12 +171,12 @@ impl DataLink {
     }
 }
 
-static mut buf: [u8; 65536] = [0; 65536];
+static mut RECV_BUF: [u8; 65536] = [0; 65536];
 
 pub unsafe fn recv_loop(sock: UdpSocket, tx: Sender<MutableIpv4Packet>) {
     loop {
-        sock.recv_from(&mut buf).unwrap();
-        let pkt = MutableIpv4Packet::new(&mut buf).unwrap();
+        sock.recv_from(&mut RECV_BUF).unwrap();
+        let pkt = MutableIpv4Packet::new(&mut RECV_BUF).unwrap();
         tx.send(pkt).unwrap();
     }
 }

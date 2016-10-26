@@ -400,8 +400,8 @@ pub fn pkt_handler(rip_ctx: &Arc<RwLock<RipCtx>>,
                                                                  pkt.get_entries()
                                                                      .iter()
                                                                      .map(|ripentry| {
-                        let mut buf = vec![0u8; 8];
-                        let mut re_pkt = MutableRipEntryPacket::new(&mut buf).unwrap();
+                        let mut re_buf = vec![0u8; 8];
+                        let mut re_pkt = MutableRipEntryPacket::new(&mut re_buf).unwrap();
                         re_pkt.populate(ripentry);
                         Route {
                             dst: re_pkt.get_address(),
