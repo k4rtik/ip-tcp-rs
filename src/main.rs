@@ -20,7 +20,7 @@ use std::sync::{Arc, RwLock};
 use std::thread;
 
 use datalink::*;
-use rip::RipCtx;
+use rip::*;
 
 fn parse_lnx(filename: &str) -> RouteInfo {
     let mut file = BufReader::new(File::open(filename).unwrap());
@@ -62,6 +62,28 @@ fn is_ip(ip_addr: &str) -> bool {
     }
 }
 
+fn print_interfaces(interfaces: Vec<Interface>) {
+    println!("id\tdst\t\tsrc\t\tenabled");
+    for (i, iface) in interfaces.iter().enumerate() {
+        println!("{}\t{}\t{}\t{}", i, iface.dst, iface.src, iface.enabled);
+    }
+}
+
+fn print_routes(routes: Vec<Route>) {
+    if !routes.is_empty() {
+        println!("dst\t\tsrc\t\tcost");
+        for r in routes {
+            if r.cost < rip::INFINITY {
+                println!("{}\t{}\t{}", r.dst, r.src, r.cost);
+            } else {
+                info!("{}\t{}\t{}", r.dst, r.src, r.cost);
+            }
+        }
+    } else {
+        println!("No routes found!");
+    }
+}
+
 fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
     loop {
         print!("> ");
@@ -78,26 +100,12 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
                 let cmd_vec = cmd_split.collect::<Vec<&str>>();
                 match cmd_vec[0] {
                     "interfaces" => {
-                        println!("id\tdst\t\tsrc\t\tenabled");
                         let interfaces = (*dl_ctx.read().unwrap()).get_interfaces();
-                        for (i, iface) in interfaces.iter().enumerate() {
-                            println!("{}\t{}\t{}\t{}", i, iface.dst, iface.src, iface.enabled);
-                        }
+                        print_interfaces(interfaces);
                     }
                     "routes" => {
                         let routes = (*rip_ctx.read().unwrap()).get_routes();
-                        if !routes.is_empty() {
-                            println!("dst\t\tsrc\t\tcost");
-                            for r in routes {
-                                if r.cost < rip::INFINITY {
-                                    println!("{}\t{}\t{}", r.dst, r.src, r.cost);
-                                } else {
-                                    info!("{}\t{}\t{}", r.dst, r.src, r.cost);
-                                }
-                            }
-                        } else {
-                            println!("No routes found!");
-                        }
+                        print_routes(routes);
                     }
                     "down" => {
                         if cmd_vec.len() != 2 {
