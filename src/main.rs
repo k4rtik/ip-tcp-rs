@@ -99,13 +99,31 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
                 let cmd_split = cmd.trim().split(' ');
                 let cmd_vec = cmd_split.collect::<Vec<&str>>();
                 match cmd_vec[0] {
-                    "interfaces" => {
+                    "interfaces" | "li" => {
                         let interfaces = (*dl_ctx.read().unwrap()).get_interfaces();
                         print_interfaces(interfaces);
                     }
-                    "routes" => {
+                    "routes" | "lr" => {
                         let routes = (*rip_ctx.read().unwrap()).get_routes();
                         print_routes(routes);
+                    }
+                    "sockets" | "ls" => {
+                        println!("Printing Sockets!");
+                    }
+                    "accept" | "a" => {
+                        if cmd_vec.len() != 2 {
+                            println!("Missing port number!");
+                        } else {
+                            println!("Accepting port...");
+                        }
+                    }
+
+                    "connect" | "c" => {
+                        if cmd_vec.len() != 3 {
+                            println!("Missing parameters!");
+                        } else {
+                            println!("Connecting...");
+                        }
                     }
                     "down" => {
                         if cmd_vec.len() != 2 {
