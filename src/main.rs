@@ -9,6 +9,7 @@ mod datalink;
 mod ip;
 mod packet;
 mod rip;
+mod tcp;
 
 use clap::{App, Arg};
 
