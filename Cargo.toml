@@ -9,13 +9,13 @@ syntex = "0.42.*"
 pnet_macros = "*"
 
 [dependencies]
-env_logger = "0.3"
-log = "0.3"
+env_logger = "*"
+log = "*"
 pnet = "*"
 pnet_macros_support = "*"
 
 [dependencies.clap]
-version = "2"
+version = "*"
 default-features = false
 
 [[bin]]
