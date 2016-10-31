@@ -1,4 +1,4 @@
-NET_PATH = ../../nets/loop.net
+NET_PATH = ../../nets/ABC.net
 
 all:
 	cp ../../../target/release/node .
