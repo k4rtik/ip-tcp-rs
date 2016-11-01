@@ -22,6 +22,7 @@ use std::thread;
 
 use datalink::*;
 use rip::*;
+use tcp::*;
 
 fn parse_lnx(filename: &str) -> RouteInfo {
     let mut file = BufReader::new(File::open(filename).unwrap());
@@ -85,7 +86,7 @@ fn print_routes(routes: Vec<Route>) {
     }
 }
 
-fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
+fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>, tcp_ctx: TCP) {
     loop {
         print!("> ");
         io::stdout().flush().unwrap();
@@ -115,7 +116,8 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
                         if cmd_vec.len() != 2 {
                             println!("Missing port number!");
                         } else {
-                            println!("Accepting port...");
+				let port = cmd_vec[1].parse::<u16>;
+                            tcp_ctx.v_accept(port)
                         }
                     }
 
@@ -277,8 +279,9 @@ fn main() {
 
     let dl_ctx_clone = dl_ctx.clone();
     let rip_ctx_clone = rip_ctx.clone();
+    let tcp_ctx = TCP::new();
     println!("Starting node...");
-    thread::spawn(move || cli_impl(dl_ctx_clone, rip_ctx_clone));
+    thread::spawn(move || cli_impl(dl_ctx_clone, rip_ctx_clone, tcp_ctx));
 
     let dl_ctx_clone = dl_ctx.clone();
     let rip_ctx_clone = rip_ctx.clone();
