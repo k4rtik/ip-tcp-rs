@@ -202,13 +202,46 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>) {
                         }
                     }
                     "help" => {
-                        println!("Commands:
-up <id>                         - enable interface with id
-down <id>                       - disable interface with id
-send <dst_ip> <prot> <payload>  - send ip packet to <dst_ip> using prot <prot>
-interfaces                      - list interfaces
-routes                          - list routing table rows
-help                            - show this help");
+                        println!("- help: Print this list of commands.\n
+- interfaces: Print \
+                                  information about each interface, one per line.\n
+- routes: \
+                                  Print information about the route to each known destination, \
+                                  one per line.\n
+- sockets: List all sockets, along with the \
+                                  state the TCP connection associated with them is in, and their \
+                                  current window sizes.\n
+- down [integer]: Bring an interface \
+                                  \"down\".\n
+- up [integer]: Bring an interface \"up\" (it must \
+                                  be an existing interface, probably one you brought down)\n
+- \
+                                  accept [port]: Spawn a socket, bind it to the given port, and \
+                                  start accepting connections on that port.\n
+- connect [ip] \
+                                  [port]: Attempt to connect to the given ip address, in dot \
+                                  notation, on the given port.  send [socket] [data]: Send a \
+                                  string on a socket.\n
+- recv [socket] [numbytes] [y/n]: Try to \
+                                  read data from a given socket. If the last argument is y, then \
+                                  you should block until numbytes is received, or the connection \
+                                  closes. If n, then don.t block; return whatever recv returns. \
+                                  Default is n.\n
+- sendfile [filename] [ip] [port]: Connect to \
+                                  the given ip and port, send the entirety of the specified \
+                                  file, and close the connection.\n
+- recvfile [filename] \
+                                  [port]: Listen for a connection on the given port. Once \
+                                  established, write everything you can read from the socket to \
+                                  the given file. Once the other side closes the connection, \
+                                  close the connection as well.\n
+- shutdown [socket] \
+                                  [read/write/both]: v_shutdown on the given socket. If read is \
+                                  given, close only the reading side. If write is given, close \
+                                  only the writing side. If both is given, close both sides. \
+                                  Default is write.\n
+- close [socket]: v_close on the given \
+                                  socket.\n");
                     }
                     "" => {}
                     _ => {
