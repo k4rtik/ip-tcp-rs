@@ -49,26 +49,27 @@ impl TCP {
         }
     }
 
-    pub fn v_socket(&mut self) -> Result<i32, &'static str> {
-        debug!("Creating socket...");
-        debug!("Initializing TCB...");
-        let mut sock_id = 80;
-        while true {
-            if !self.sockids.contains(&sock_id) {
-                break;
-            }
-            sock_id += 1;
-        }
-        let mut tcb = TCB {
-            socket_id: sock_id,
+    pub fn v_socket(&mut self) -> Result<usize, String> {
+        info!("Creating socket...");
+        let sock_id = match self.free_sockets.pop() {
+            Some(socket) => socket,
+            None => self.tc_blocks.len(),
+        };
+        let tcb = TCB {
             local_ip: "0.0.0.0".parse::<Ipv4Addr>().unwrap(),
             local_port: 0,
             dst_ip: "0.0.0.0".parse::<Ipv4Addr>().unwrap(),
             dst_port: 0,
-            tcp_state: 0,
+            state: STATUS::Closed,
         };
-        self.tcb_list.insert(sock_id, tcb);
-        Ok(sock_id)
+        match self.tc_blocks.insert(sock_id, tcb) {
+            Some(_) => Ok(sock_id),
+            None => {
+                Err("ENOMEM: Insufficient memory is available. The socket cannot be created until \
+                     sufficient resources are freed."
+                    .to_owned())
+            }
+        }
     }
 
     pub fn v_bind(&mut self, socket: i32, addr: Ipv4Addr, port: u16) -> Result<i32, &'static str> {
