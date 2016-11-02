@@ -1,5 +1,9 @@
-use std::net::Ipv4Addr;
 use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, RwLock};
+use std::net::Ipv4Addr;
+use std::thread;
+use std::time::Duration;
+
 use pnet::packet::tcp::MutableTcpPacket;
 
 #[derive(Clone, Debug)]
@@ -172,10 +176,20 @@ impl TCP {
             None => Err("No TCB associated with this connection!".to_owned()),
         }
     }
+}
 
-    #[allow(unused_variables)]
-    pub fn v_accept(&mut self, socket: usize, addr: Ipv4Addr) -> Result<usize, String> {
-        // XXX TODO Sumukha, this logic goes out in client wrapper for accept command
-        Ok(0)
-    }
+#[allow(unused_variables)]
+pub fn v_accept(tcp_ctx: &Arc<RwLock<TCP>>,
+                socket: usize,
+                addr: Option<Ipv4Addr>)
+                -> Result<usize, String> {
+    // TODO
+    // create new TCB
+    // wait for SYN
+    // send SYN, ACK
+    // switch state to SYN RCVD, need write lock
+    // wait for ACK of SYN
+    // switch state to ESTAB, need write lock
+    thread::sleep(Duration::from_secs(10));
+    Ok(0)
 }

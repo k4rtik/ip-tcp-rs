@@ -105,15 +105,35 @@ fn print_sockets(sockets: Vec<Socket>) {
 pub fn accept_cmd(tcp_ctx: &Arc<RwLock<TCP>>, port: u16) {
     info!("Creating socket...");
     let s = (*tcp_ctx.write().unwrap()).v_socket();
-    match s {
-        Ok(sock) => {
-            let ret = (*tcp_ctx.write().unwrap()).v_bind(sock, None, port);
-            if ret.is_ok() {
-                let ret = (*tcp_ctx.write().unwrap()).v_listen(sock);
+    // TODO think if this scoping is necessary to prevent deadlock?
+    {
+        let tcp = &mut (*tcp_ctx.write().unwrap());
+        match s {
+            Ok(ref sock) => {
+                match tcp.v_bind(*sock, None, port) {
+                    Ok(_) => {
+                        match tcp.v_listen(*sock) {
+                            Ok(_) => trace!("v_listen() succeeded"),
+                            Err(e) => error!("v_listen: {}", e),
+                        }
+                    }
+
+                    Err(e) => error!("v_bind: {}", e),
+                }
+            }
+            Err(ref e) => error!("v_socket: {}", e),
+        }
+    }
+    let sock = s.unwrap();
+    let tcp_ctx_clone = tcp_ctx.clone();
+    thread::spawn(move || {
+        loop {
+            match tcp::v_accept(&tcp_ctx_clone, sock, None) {
+                Ok(socket) => info!("v_accept returned {}", socket),
+                Err(e) => error!("v_accept: {}", e),
             }
         }
-        Err(e) => error!("v_socket: {}", e),
-    }
+    });
 }
 
 pub fn connect_cmd(tcp_ctx: &Arc<RwLock<TCP>>, addr: Ipv4Addr, port: u16) {
