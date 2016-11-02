@@ -56,7 +56,7 @@ impl TCP {
             .iter()
             .map(|(sock, tcb)| {
                 Socket {
-                    socket_id: sock.clone(),
+                    socket_id: *sock,
                     local_addr: tcb.local_ip,
                     local_port: tcb.local_port,
                     dst_addr: tcb.dst_ip,
