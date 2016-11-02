@@ -1,5 +1,6 @@
 use std::net::Ipv4Addr;
 use std::collections::{HashMap, HashSet};
+use pnet::packet::tcp::MutableTcpPacket;
 
 #[derive(Clone, Debug)]
 pub enum STATUS {
@@ -39,6 +40,24 @@ pub struct TCP {
     tc_blocks: HashMap<usize, TCB>,
     free_sockets: Vec<usize>,
     bound_ports: HashSet<u16>,
+}
+
+pub struct TcpParams {
+    src_port: u16,
+    dst_port: u16,
+    seq_num: u32,
+    ack_num: u32,
+}
+
+pub fn build_tcp_packet(t_params: TcpParams, payload: &mut [u8]) -> MutableTcpPacket {
+    let mut tcp_packet = MutableTcpPacket::new(payload).unwrap();
+    tcp_packet.set_source(t_params.src_port);
+    tcp_packet.set_destination(t_params.dst_port);
+    tcp_packet.set_sequence(t_params.seq_num);
+    tcp_packet.set_acknowledgement(t_params.ack_num);
+    let cksum = tcp_packet.get_checksum();
+    tcp_packet.set_checksum(cksum);
+    tcp_packet
 }
 
 impl TCP {
