@@ -76,7 +76,6 @@ impl TCP {
         info!("Binding to IP {}, port {}", addr, port);
         match self.tc_blocks.get_mut(&socket) {
             Some(tcb) => {
-                // TODO check for bound ports
                 if !self.bound_ports.contains(&port) {
                     tcb.local_ip = addr;
                     tcb.local_port = port;
@@ -92,7 +91,29 @@ impl TCP {
 
     #[allow(unused_variables)]
     pub fn v_listen(&mut self, socket: usize) -> Result<(), String> {
-        Ok(())
+        match self.tc_blocks.get_mut(&socket) {
+            Some(tcb) => {
+                if tcb.local_port != 0 {
+                    tcb.state = STATUS::Listen;
+                    info!("TCB state changed to LISTEN");
+                    Ok(())
+                } else {
+                    let mut rand_port = 1024;
+                    while rand_port != 65536 {
+                        if !self.bound_ports.contains(&rand_port) {
+                            debug!("Assigning random port to {}", rand_port);
+                            tcb.local_ip = "0.0.0.0".parse::<Ipv4Addr>().unwrap();
+                            tcb.local_port = rand_port;
+                            tcb.state = STATUS::Listen;
+                            info!("TCB state changed to LISTEN");
+                            return Ok(());
+                        }
+                    }
+                    Err("No available ports to bind!".to_owned())
+                }
+            }
+            None => Err("No TCB associated with this connection!".to_owned()),
+        }
     }
 
     #[allow(unused_variables)]
