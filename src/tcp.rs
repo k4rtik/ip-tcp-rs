@@ -16,27 +16,27 @@ enum STATUS {
 }
 
 pub struct Socket {
+    socket_id: usize,
+    local_addr: Ipv4Addr,
+    local_port: u16,
+    dst_addr: Ipv4Addr,
+    dst_port: u16,
+    status: STATUS,
+}
+
+struct TCB {
     local_ip: Ipv4Addr,
     local_port: u16,
     dst_ip: Ipv4Addr,
     dst_port: u16,
-    status: u16,
+    state: STATUS,
 }
 
 pub struct TCP {
     // container of TCBs
-    tcb_list: HashMap<i32, TCB>,
-    sockids: HashSet<i32>,
-}
-
-
-struct TCB {
-    socket_id: i32,
-    local_ip: Ipv4Addr,
-    local_port: u16,
-    dst_ip: Ipv4Addr,
-    dst_port: u16,
-    tcp_state: u16,
+    tc_blocks: HashMap<usize, TCB>,
+    free_sockets: Vec<usize>,
+    bound_ports: HashSet<u16>,
 }
 
 impl TCP {
