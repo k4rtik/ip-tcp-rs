@@ -77,9 +77,14 @@ impl TCP {
         match self.tc_blocks.get_mut(&socket) {
             Some(tcb) => {
                 // TODO check for bound ports
-                tcb.local_ip = addr;
-                tcb.local_port = port;
-                Ok(())
+                if !self.bound_ports.contains(&port) {
+                    tcb.local_ip = addr;
+                    tcb.local_port = port;
+                    self.bound_ports.insert(port);
+                    Ok(())
+                } else {
+                    Err("Port already in use!".to_owned())
+                }
             }
             None => Err("EBADF: sockfd is not a valid descriptor.".to_owned()),
         }
@@ -96,16 +101,22 @@ impl TCP {
     }
 
     #[allow(unused_variables)]
-    pub fn v_accept(&mut self, socket: usize, addr: Ipv4Addr, port: u16) -> Result<usize, String> {
+    pub fn v_accept(&mut self, socket: usize, addr: Ipv4Addr) -> Result<usize, String> {
         // XXX TODO Sumukha, this logic goes out in client wrapper for accept command
-        let s = self.v_socket();
-        if s.is_ok() {
-            let sock = s.unwrap();
-            let ret = self.v_bind(sock, addr, port);
-            if ret.is_ok() {
-                let ret = self.v_listen(sock);
-            }
-        }
         Ok(0)
+    }
+    pub fn accept_cmd(&mut self, port: u16) {
+        info!("Creating socket...");
+        let s = self.v_socket();
+        match s {
+            Ok(sock) => {
+                let addr = "0.0.0.0".parse::<Ipv4Addr>().unwrap();
+                let ret = self.v_bind(sock, addr, port);
+                if ret.is_ok() {
+                    let ret = self.v_listen(sock);
+                }
+            }
+            Err(e) => {}
+        }
     }
 }

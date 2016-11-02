@@ -118,11 +118,14 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                     "accept" | "a" => {
                         if cmd_vec.len() != 2 {
                             println!("Missing port number!");
+                        } else {
+                            let port = cmd_vec[1].parse::<u16>();
+                            match port {
+                                Ok(port) => (*tcp_ctx.write().unwrap()).accept_cmd(port),
+                                Err(e) => println!("Error {}", e),
+                            }
+
                         }
-                        // else {
-                        //    let port = cmd_vec[1].parse::<u16>;
-                        //    tcp_ctx.v_accept(port)
-                        // }
                     }
 
                     "connect" | "c" => {
