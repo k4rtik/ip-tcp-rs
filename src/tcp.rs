@@ -42,11 +42,11 @@ pub struct TCP {
 impl TCP {
     pub fn new() -> TCP {
         debug!("Starting TCP...");
-        let tcp = TCP {
-            tcb_list: HashMap::new(),
-            sockids: HashSet::new(),
-        };
-        tcp
+        TCP {
+            tc_blocks: HashMap::new(),
+            free_sockets: Vec::new(),
+            bound_ports: HashSet::new(),
+        }
     }
 
     pub fn v_socket(&mut self) -> Result<i32, &'static str> {
