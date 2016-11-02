@@ -85,19 +85,19 @@ impl TCP {
         }
     }
 
-    pub fn v_listen(&mut self, socket: i32) -> Result<u32, &'static str> {
+    #[allow(unused_variables)]
+    pub fn v_listen(&mut self, socket: usize) -> Result<(), String> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    pub fn v_connect(&mut self, socket: usize, addr: Ipv4Addr, port: u16) -> Result<usize, String> {
         Ok(0)
     }
 
-    pub fn v_connect(&mut self,
-                     socket: i32,
-                     addr: Ipv4Addr,
-                     port: u16)
-                     -> Result<i32, &'static str> {
-        Ok(0)
-    }
-
-    pub fn v_accept(&mut self, socket: i32, addr: Ipv4Addr, port: u16) -> Result<i32, &'static str> {
+    #[allow(unused_variables)]
+    pub fn v_accept(&mut self, socket: usize, addr: Ipv4Addr, port: u16) -> Result<usize, String> {
+        // XXX TODO Sumukha, this logic goes out in client wrapper for accept command
         let s = self.v_socket();
         if s.is_ok() {
             let sock = s.unwrap();
