@@ -4,6 +4,7 @@ extern crate env_logger;
 extern crate log;
 extern crate pnet;
 extern crate pnet_macros_support;
+extern crate rustyline;
 
 mod datalink;
 mod ip;
@@ -12,9 +13,11 @@ mod rip;
 mod tcp;
 
 use clap::{App, Arg};
+use rustyline::error::ReadlineError;
+use rustyline::Editor;
 
 use std::fs::File;
-use std::io::{self, BufReader, BufRead, Write};
+use std::io::{BufReader, BufRead};
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
@@ -90,17 +93,15 @@ fn print_routes(routes: Vec<Route>) {
 fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
             rip_ctx: Arc<RwLock<RipCtx>>,
             tcp_ctx: Arc<RwLock<TCP>>) {
+    let mut rl = Editor::<()>::new();
+    if let Err(_) = rl.load_history("history.txt") {
+        warn!("No previous history.");
+    }
     loop {
-        print!("> ");
-        io::stdout().flush().unwrap();
-
-        let cmd = &mut String::new();
-        match io::stdin().read_line(cmd) {
-            Ok(0) => {
-                info!("EndOfFile sent (Ctrl-D)");
-                break;
-            }
-            Ok(_) => {
+        let readline = rl.readline("> ");
+        match readline {
+            Ok(cmd) => {
+                rl.add_history_entry(&cmd);
                 let cmd_split = cmd.trim().split(' ');
                 let cmd_vec = cmd_split.collect::<Vec<&str>>();
                 match cmd_vec[0] {
@@ -258,11 +259,21 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                     }
                 }
             }
-            Err(_) => {
-                panic!("Unexpected error reading from stdin");
+            Err(ReadlineError::Interrupted) => {
+                info!("Ctrl-C");
+                break;
+            }
+            Err(ReadlineError::Eof) => {
+                info!("Ctrl-D");
+                break;
+            }
+            Err(err) => {
+                error!("Error: {:?}", err);
+                break;
             }
         }
     }
+    rl.save_history("history.txt").unwrap();
     info!("CLI loop exited");
     std::process::exit(0);
 }
