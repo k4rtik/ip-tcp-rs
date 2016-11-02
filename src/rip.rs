@@ -181,7 +181,7 @@ impl RipCtx {
                                 dl_ctx: &Arc<RwLock<DataLink>>,
                                 routes: Vec<Route>,
                                 source: Option<Ipv4Addr>) {
-        debug!{"Received routes for update: {:?}", routes};
+        trace!{"Received routes for update: {:?}", routes};
         for route in routes {
             match (*dl_ctx.read().unwrap()).get_interface_by_dst(route.src) {
                 Some(iface) => {
@@ -208,7 +208,7 @@ impl RipCtx {
                     };
 
                     let mut need_to_add = false;
-                    debug!("BEFORE routing_table: {:?}", self.routing_table);
+                    trace!("BEFORE routing_table: {:?}", self.routing_table);
                     match self.routing_table.iter_mut().find(|rentry| rentry.dst == route.dst) {
                         Some(rentry) => {
                             rentry.metric = if route.cost < rentry.metric {
@@ -218,7 +218,7 @@ impl RipCtx {
                                 rentry.metric
                             };
                             rentry.timer = SystemTime::now();
-                            debug!("rentry: {:?}", rentry);
+                            trace!("rentry: {:?}", rentry);
                         }
                         None => {
                             if route.cost < INFINITY {
@@ -240,7 +240,7 @@ impl RipCtx {
                             route_changed: true,
                         });
                     }
-                    debug!("AFTER routing_table: {:?}", self.routing_table);
+                    trace!("AFTER routing_table: {:?}", self.routing_table);
                 } else {
                     warn!("cost is invalid: {}", route.cost);
                 }
@@ -327,7 +327,7 @@ fn send_routing_table(rip_ctx: &Arc<RwLock<RipCtx>>,
         tos: 0,
         opt: vec![],
     };
-    debug!("SENDING RIP: {:?}", rip_pkt);
+    trace!("SENDING RIP: {:?}", rip_pkt);
     let res = ip::send(dl_ctx,
                        None,
                        ip_params,
@@ -337,7 +337,7 @@ fn send_routing_table(rip_ctx: &Arc<RwLock<RipCtx>>,
                        0,
                        true);
     match res {
-        Ok(_) => info!("RIP update sent succesfully on {:?}", dst),
+        Ok(_) => trace!("RIP update sent succesfully on {:?}", dst),
         Err(str) => warn!("{}", str),
     }
 }
@@ -394,7 +394,7 @@ pub fn pkt_handler(rip_ctx: &Arc<RwLock<RipCtx>>,
         }
         2 => {
             // response
-            info!("processing RIP response");
+            trace!("processing RIP response");
             if (*dl_ctx.read().unwrap()).is_neighbor_address(ip_params.src) {
                 (*rip_ctx.write().unwrap()).update_routing_table(dl_ctx,
                                                                  pkt.get_entries()
