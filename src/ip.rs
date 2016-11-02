@@ -67,12 +67,14 @@ pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
     match rip {
         Some(rip_ctx) => {
             if (*dl_ctx.read().unwrap()).is_local_address(params.dst) {
+                // handle local delivery
                 let params = IpParams { src: params.src, ..params };
                 build_ipv4_header(&params, prot, ttl, id, &mut pkt_buf);
                 let mut pkt = MutableIpv4Packet::new(&mut pkt_buf).unwrap();
                 handle_packet(dl_ctx, rip_ctx, &mut pkt);
                 Ok(())
             } else {
+                // general send() for most layers
                 match (*rip_ctx.read().unwrap()).get_next_hop(params.dst) {
                     Some(next_hop) => {
                         let params = IpParams {
@@ -99,6 +101,7 @@ pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
             }
         }
         None => {
+            // only used by RIP layer as it cannot pass a RIP ctx
             match (*dl_ctx.read().unwrap()).get_interface_by_dst(params.dst) {
                 Some(iface) => {
                     let params = IpParams {

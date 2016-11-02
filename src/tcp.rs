@@ -107,7 +107,6 @@ impl TCP {
         }
     }
 
-    #[allow(unused_variables)]
     pub fn v_listen(&mut self, socket: usize) -> Result<(), String> {
         match self.tc_blocks.get_mut(&socket) {
             Some(tcb) => {
@@ -135,15 +134,14 @@ impl TCP {
         }
     }
 
-    #[allow(unused_variables)]
-    pub fn v_connect(&mut self, socket: usize, addr: Ipv4Addr, port: u16) -> Result<usize, String> {
+    pub fn v_connect(&mut self, socket: usize, addr: Ipv4Addr, port: u16) -> Result<(), String> {
         match self.tc_blocks.get_mut(&socket) {
             Some(tcb) => {
                 tcb.dst_ip = addr;
                 tcb.dst_port = port;
                 // tcb.status = STATUS::
                 // XXX TODO: Send SYN; change status
-                Ok(socket)
+                Ok(())
             }
             None => Err("No TCB associated with this connection!".to_owned()),
         }

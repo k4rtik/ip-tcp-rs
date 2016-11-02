@@ -113,7 +113,7 @@ pub fn accept_cmd(tcp_ctx: &Arc<RwLock<TCP>>, port: u16) {
                 let ret = (*tcp_ctx.write().unwrap()).v_listen(sock);
             }
         }
-        Err(e) => println!("Accepting failed!"),
+        Err(e) => error!("accept_cmd: {}", e),
     }
 }
 
@@ -122,9 +122,12 @@ pub fn connect_cmd(tcp_ctx: &Arc<RwLock<TCP>>, addr: Ipv4Addr, port: u16) {
     let s = (*tcp_ctx.write().unwrap()).v_socket();
     match s {
         Ok(sock) => {
-            let ret = (*tcp_ctx.write().unwrap()).v_connect(sock, addr, port);
+            match (*tcp_ctx.write().unwrap()).v_connect(sock, addr, port) {
+                Ok(_) => info!("Successfully connected to {}:{}", addr, port),
+                Err(e) => error!("v_connect() failed: {}", e),
+            }
         }
-        Err(e) => println!("Connecting failed!"),
+        Err(e) => error!("v_socket() failed: {}", e),
     }
 }
 
