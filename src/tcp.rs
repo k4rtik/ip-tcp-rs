@@ -111,12 +111,17 @@ impl TCP {
         }
     }
 
-    pub fn v_bind(&mut self, socket: usize, addr: Ipv4Addr, port: u16) -> Result<(), String> {
-        info!("Binding to IP {}, port {}", addr, port);
+    // TODO if addr is None, bind to any available (local) interface
+    pub fn v_bind(&mut self,
+                  socket: usize,
+                  addr: Option<Ipv4Addr>,
+                  port: u16)
+                  -> Result<(), String> {
+        info!("Binding to IP {:?}, port {}", addr, port);
         match self.tc_blocks.get_mut(&socket) {
             Some(tcb) => {
                 if !self.bound_ports.contains(&port) {
-                    tcb.local_ip = addr;
+                    tcb.local_ip = addr.unwrap_or_else(|| "0.0.0.0".parse::<Ipv4Addr>().unwrap());
                     tcb.local_port = port;
                     self.bound_ports.insert(port);
                     Ok(())
