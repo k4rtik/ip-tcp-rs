@@ -85,7 +85,18 @@ pub fn accept_cmd(tcp_ctx: &Arc<RwLock<TCP>>, port: u16) {
                 let ret = (*tcp_ctx.write().unwrap()).v_listen(sock);
             }
         }
-        Err(e) => {}
+        Err(e) => println!("Accepting failed!"),
+    }
+}
+
+pub fn connect_cmd(tcp_ctx: &Arc<RwLock<TCP>>, addr: Ipv4Addr, port: u16) {
+    info!("Connecting...");
+    let s = (*tcp_ctx.write().unwrap()).v_socket();
+    match s {
+        Ok(sock) => {
+            let ret = (*tcp_ctx.write().unwrap()).v_connect(sock, addr, port);
+        }
+        Err(e) => println!("Connecting failed!"),
     }
 }
 
@@ -146,7 +157,20 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                         if cmd_vec.len() != 3 {
                             println!("Missing parameters!");
                         } else {
-                            println!("Connecting...");
+                            let addr = cmd_vec[1].parse::<Ipv4Addr>();
+                            match addr {
+                                Ok(addr) => {
+                                    let port = cmd_vec[2].parse::<u16>();
+                                    match port {
+                                        Ok(port) => {
+                                            connect_cmd(&tcp_ctx, addr, port);
+                                        }
+                                        Err(e) => println!("Port value not in format! \n {}", e),
+                                    }
+
+                                }
+                                Err(e) => println!("IP Address not in format! \n {}", e),
+                            }
                         }
                     }
                     "down" => {

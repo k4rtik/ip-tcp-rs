@@ -100,7 +100,7 @@ impl TCP {
                     Ok(())
                 } else {
                     let mut rand_port = 1024;
-                    while rand_port != 65536 {
+                    while rand_port != 65535 {
                         if !self.bound_ports.contains(&rand_port) {
                             debug!("Assigning random port to {}", rand_port);
                             tcb.local_ip = "0.0.0.0".parse::<Ipv4Addr>().unwrap();
@@ -109,6 +109,7 @@ impl TCP {
                             info!("TCB state changed to LISTEN");
                             return Ok(());
                         }
+			rand_port += 1;
                     }
                     Err("No available ports to bind!".to_owned())
                 }
@@ -119,7 +120,16 @@ impl TCP {
 
     #[allow(unused_variables)]
     pub fn v_connect(&mut self, socket: usize, addr: Ipv4Addr, port: u16) -> Result<usize, String> {
-        Ok(0)
+        match self.tc_blocks.get_mut(&socket) {
+            Some(tcb) => {
+                tcb.dst_ip = addr;
+                tcb.dst_port = port;
+                // tcb.status = STATUS::
+                // XXX TODO: Send SYN; change status
+		Ok(socket)
+            }
+            None => Err("No TCB associated with this connection!".to_owned()),
+        }
     }
 
     #[allow(unused_variables)]
