@@ -17,6 +17,7 @@ pub enum STATUS {
     Closed,
 }
 
+#[derive(Debug)]
 pub struct Socket {
     pub socket_id: usize,
     pub local_addr: Ipv4Addr,
@@ -26,6 +27,7 @@ pub struct Socket {
     pub status: STATUS,
 }
 
+#[derive(Debug)]
 struct TCB {
     local_ip: Ipv4Addr,
     local_port: u16,
@@ -99,13 +101,13 @@ impl TCP {
             dst_port: 0,
             state: STATUS::Closed,
         };
+        debug!("{:?} {:?} ", sock_id, tcb);
         match self.tc_blocks.insert(sock_id, tcb) {
-            Some(_) => Ok(sock_id),
-            None => {
-                Err("ENOMEM: Insufficient memory is available. The socket cannot be created until \
-                     sufficient resources are freed."
-                    .to_owned())
+            Some(v) => {
+                warn!("overwrote exisiting value: {:?}", v);
+                Ok(sock_id)
             }
+            None => Ok(sock_id),
         }
     }
 

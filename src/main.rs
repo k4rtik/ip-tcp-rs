@@ -92,7 +92,7 @@ fn print_routes(routes: Vec<Route>) {
 fn print_sockets(sockets: Vec<Socket>) {
     println!("socket\tlocal-addr\tport\tdst-addr\tport\tstatus");
     for s in sockets {
-        println!("{}\t{}\t{}\t{}\t{}\t{:?}",
+        println!("{}\t{}\t\t{}\t{}\t\t{}\t{:?}",
                  s.socket_id,
                  s.local_addr,
                  s.local_port,
@@ -113,7 +113,7 @@ pub fn accept_cmd(tcp_ctx: &Arc<RwLock<TCP>>, port: u16) {
                 let ret = (*tcp_ctx.write().unwrap()).v_listen(sock);
             }
         }
-        Err(e) => error!("accept_cmd: {}", e),
+        Err(e) => error!("v_socket: {}", e),
     }
 }
 
