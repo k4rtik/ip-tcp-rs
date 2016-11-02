@@ -6,7 +6,7 @@ all:
 	./runNetwork $(NET_PATH)
 
 ref:
-	cp ../node .
+	cp ../tcp_node node
 	./net2lnx $(NET_PATH)
 	./runNetwork $(NET_PATH)
 
