@@ -105,18 +105,4 @@ impl TCP {
         // XXX TODO Sumukha, this logic goes out in client wrapper for accept command
         Ok(0)
     }
-    pub fn accept_cmd(&mut self, port: u16) {
-        info!("Creating socket...");
-        let s = self.v_socket();
-        match s {
-            Ok(sock) => {
-                let addr = "0.0.0.0".parse::<Ipv4Addr>().unwrap();
-                let ret = self.v_bind(sock, addr, port);
-                if ret.is_ok() {
-                    let ret = self.v_listen(sock);
-                }
-            }
-            Err(e) => {}
-        }
-    }
 }

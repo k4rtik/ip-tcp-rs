@@ -74,6 +74,21 @@ fn print_interfaces(interfaces: Vec<Interface>) {
     }
 }
 
+pub fn accept_cmd(tcp_ctx: &Arc<RwLock<TCP>>, port: u16) {
+    info!("Creating socket...");
+    let s = (*tcp_ctx.write().unwrap()).v_socket();
+    match s {
+        Ok(sock) => {
+            let addr = "0.0.0.0".parse::<Ipv4Addr>().unwrap();
+            let ret = (*tcp_ctx.write().unwrap()).v_bind(sock, addr, port);
+            if ret.is_ok() {
+                let ret = (*tcp_ctx.write().unwrap()).v_listen(sock);
+            }
+        }
+        Err(e) => {}
+    }
+}
+
 fn print_routes(routes: Vec<Route>) {
     if !routes.is_empty() {
         println!("dst\t\tsrc\t\tcost");
@@ -122,7 +137,7 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                         } else {
                             let port = cmd_vec[1].parse::<u16>();
                             match port {
-                                Ok(port) => (*tcp_ctx.write().unwrap()).accept_cmd(port),
+                                Ok(port) => accept_cmd(&tcp_ctx, port),
                                 Err(e) => println!("Error {}", e),
                             }
 
