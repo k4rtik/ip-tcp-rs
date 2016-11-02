@@ -104,7 +104,6 @@ fn print_routes(routes: Vec<Route>) {
     }
 }
 
-#[allow(unused_variables)]
 fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
             rip_ctx: Arc<RwLock<RipCtx>>,
             tcp_ctx: Arc<RwLock<TCP>>) {
@@ -143,7 +142,6 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
 
                         }
                     }
-
                     "connect" | "c" => {
                         if cmd_vec.len() != 3 {
                             println!("Missing parameters!");
@@ -195,7 +193,8 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                             }
                         }
                     }
-                    "send" => {
+                    "send" | "s" | "w" => {
+                        // TODO this implementation is for IP, write one for TCP
                         if cmd_vec.len() != 4 {
                             println!("Missing parameters");
                         } else if !is_ip(cmd_vec[1]) {
@@ -226,47 +225,65 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                             }
                         }
                     }
+                    "recv" | "r" => {
+                        if cmd_vec.len() != 3 {
+                            println!("Missing parameters!");
+                        } else {
+                            println!("Receiving...");
+                        }
+                    }
+                    "sendfile" | "sf" => {
+                        if cmd_vec.len() != 4 {
+                            println!("Missing parameters!");
+                        } else {
+                            println!("Sending file...");
+                        }
+                    }
+                    "recvfile" | "rf" => {
+                        if cmd_vec.len() != 3 {
+                            println!("Missing parameters!");
+                        } else {
+                            println!("Receiving file...");
+                        }
+                    }
+                    "window" => {
+                        if cmd_vec.len() != 2 {
+                            println!("Missing parameters!");
+                        } else {
+                            println!("Window size is...");
+                        }
+                    }
+                    "shutdown" => {
+                        if cmd_vec.len() != 3 {
+                            println!("Missing parameters!");
+                        } else {
+                            println!("Shutting down socket...");
+                        }
+                    }
+                    "close" => {
+                        if cmd_vec.len() != 2 {
+                            println!("Missing parameters!");
+                        } else {
+                            println!("Closing socket...");
+                        }
+                    }
                     "help" => {
-                        println!("- help: Print this list of commands.\n
-- interfaces: Print \
-                                  information about each interface, one per line.\n
-- routes: \
-                                  Print information about the route to each known destination, \
-                                  one per line.\n
-- sockets: List all sockets, along with the \
-                                  state the TCP connection associated with them is in, and their \
-                                  current window sizes.\n
-- down [integer]: Bring an interface \
-                                  \"down\".\n
-- up [integer]: Bring an interface \"up\" (it must \
-                                  be an existing interface, probably one you brought down)\n
-- \
-                                  accept [port]: Spawn a socket, bind it to the given port, and \
-                                  start accepting connections on that port.\n
-- connect [ip] \
-                                  [port]: Attempt to connect to the given ip address, in dot \
-                                  notation, on the given port.  send [socket] [data]: Send a \
-                                  string on a socket.\n
-- recv [socket] [numbytes] [y/n]: Try to \
-                                  read data from a given socket. If the last argument is y, then \
-                                  you should block until numbytes is received, or the connection \
-                                  closes. If n, then don.t block; return whatever recv returns. \
-                                  Default is n.\n
-- sendfile [filename] [ip] [port]: Connect to \
-                                  the given ip and port, send the entirety of the specified \
-                                  file, and close the connection.\n
-- recvfile [filename] \
-                                  [port]: Listen for a connection on the given port. Once \
-                                  established, write everything you can read from the socket to \
-                                  the given file. Once the other side closes the connection, \
-                                  close the connection as well.\n
-- shutdown [socket] \
-                                  [read/write/both]: v_shutdown on the given socket. If read is \
-                                  given, close only the reading side. If write is given, close \
-                                  only the writing side. If both is given, close both sides. \
-                                  Default is write.\n
-- close [socket]: v_close on the given \
-                                  socket.\n");
+                        println!("Commands:
+interfaces/li                       - list interfaces
+routes/lr                           - list routing table rows
+sockets/ls                          - list sockets (fd, ip, port, state)
+down <id>                           - disable interface with id
+up <id>                             - enable interface with id
+accept/a <port>                     - start listening for incoming connections on the specified port
+connect/c <ip> <port>               - attempt to connect to the specified IP address:port
+send/s/w <socket> <data>            - send a string on a socket
+recv/r <socket> <numbytes> <y/n>    - receive numbytes from socket, blocking if y, n is default
+sendfile/sf <file> <ip> <port>      - send given file to ip:port
+recvfile/rf <file> <port>           - listens on given port and writes output to specified file
+window <socket>                     - lists window sizes for socket
+shutdown <socket> <read/write/both> - v_shutdown on the given socket
+close <socket>                      - v_close on the given socket
+help                                - show this help");
                     }
                     "" => {}
                     _ => {
