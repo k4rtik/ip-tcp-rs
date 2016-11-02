@@ -1,6 +1,19 @@
 use std::net::Ipv4Addr;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+
+enum STATUS {
+    Listen,
+    SynSent,
+    SynRcvd,
+    Estab,
+    FinWait1,
+    FinWait2,
+    CloseWait,
+    Closing,
+    LastAck,
+    TimeWait,
+    Closed,
+}
 
 pub struct Socket {
     local_ip: Ipv4Addr,
