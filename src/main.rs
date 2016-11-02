@@ -86,7 +86,10 @@ fn print_routes(routes: Vec<Route>) {
     }
 }
 
-fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>, tcp_ctx: TCP) {
+#[allow(unused_variables)]
+fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
+            rip_ctx: Arc<RwLock<RipCtx>>,
+            tcp_ctx: Arc<RwLock<TCP>>) {
     loop {
         print!("> ");
         io::stdout().flush().unwrap();
@@ -115,10 +118,11 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>, rip_ctx: Arc<RwLock<RipCtx>>, tcp_ctx
                     "accept" | "a" => {
                         if cmd_vec.len() != 2 {
                             println!("Missing port number!");
-                        } else {
-				let port = cmd_vec[1].parse::<u16>;
-                            tcp_ctx.v_accept(port)
                         }
+                        // else {
+                        //    let port = cmd_vec[1].parse::<u16>;
+                        //    tcp_ctx.v_accept(port)
+                        // }
                     }
 
                     "connect" | "c" => {
@@ -272,21 +276,23 @@ fn main() {
 
     let ri = parse_lnx(&lnx_file);
 
-    let (datalink, rx) = DataLink::new(&ri);
+    let (datalink, dl_rx) = DataLink::new(&ri);
     let dl_ctx = Arc::new(RwLock::new(datalink));
 
     let rip_ctx = Arc::new(RwLock::new(RipCtx::new(&ri)));
 
+    let tcp_ctx = Arc::new(RwLock::new(TCP::new()));
+
     let dl_ctx_clone = dl_ctx.clone();
     let rip_ctx_clone = rip_ctx.clone();
-    let tcp_ctx = TCP::new();
+    let tcp_ctx_clone = tcp_ctx.clone();
+
     println!("Starting node...");
-    thread::spawn(move || cli_impl(dl_ctx_clone, rip_ctx_clone, tcp_ctx));
+    thread::spawn(move || cli_impl(dl_ctx_clone, rip_ctx_clone, tcp_ctx_clone));
 
     let dl_ctx_clone = dl_ctx.clone();
     let rip_ctx_clone = rip_ctx.clone();
     thread::spawn(move || rip::start_rip_module(&dl_ctx_clone, &rip_ctx_clone));
 
-    ip::start_ip_module(&dl_ctx, &rip_ctx, rx);
-
+    ip::start_ip_module(&dl_ctx, &rip_ctx, dl_rx); //, &tcp_ctx);
 }
