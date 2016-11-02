@@ -74,6 +74,34 @@ fn print_interfaces(interfaces: Vec<Interface>) {
     }
 }
 
+fn print_routes(routes: Vec<Route>) {
+    if !routes.is_empty() {
+        println!("dst\t\tsrc\t\tcost");
+        for r in routes {
+            if r.cost < rip::INFINITY {
+                println!("{}\t{}\t{}", r.dst, r.src, r.cost);
+            } else {
+                info!("{}\t{}\t{}", r.dst, r.src, r.cost);
+            }
+        }
+    } else {
+        println!("No routes found!");
+    }
+}
+
+fn print_sockets(sockets: Vec<Socket>) {
+    println!("socket\tlocal-addr\tport\tdst-addr\tport\tstatus");
+    for s in sockets {
+        println!("{}\t{}\t{}\t{}\t{}\t{:?}",
+                 s.socket_id,
+                 s.local_addr,
+                 s.local_port,
+                 s.dst_addr,
+                 s.dst_port,
+                 s.status);
+    }
+}
+
 pub fn accept_cmd(tcp_ctx: &Arc<RwLock<TCP>>, port: u16) {
     info!("Creating socket...");
     let s = (*tcp_ctx.write().unwrap()).v_socket();
@@ -97,21 +125,6 @@ pub fn connect_cmd(tcp_ctx: &Arc<RwLock<TCP>>, addr: Ipv4Addr, port: u16) {
             let ret = (*tcp_ctx.write().unwrap()).v_connect(sock, addr, port);
         }
         Err(e) => println!("Connecting failed!"),
-    }
-}
-
-fn print_routes(routes: Vec<Route>) {
-    if !routes.is_empty() {
-        println!("dst\t\tsrc\t\tcost");
-        for r in routes {
-            if r.cost < rip::INFINITY {
-                println!("{}\t{}\t{}", r.dst, r.src, r.cost);
-            } else {
-                info!("{}\t{}\t{}", r.dst, r.src, r.cost);
-            }
-        }
-    } else {
-        println!("No routes found!");
     }
 }
 
@@ -139,7 +152,8 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                         print_routes(routes);
                     }
                     "sockets" | "ls" => {
-                        println!("Printing Sockets!");
+                        let sockets = (*tcp_ctx.read().unwrap()).get_sockets();
+                        print_sockets(sockets);
                     }
                     "accept" | "a" => {
                         if cmd_vec.len() != 2 {

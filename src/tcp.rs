@@ -1,7 +1,8 @@
 use std::net::Ipv4Addr;
 use std::collections::{HashMap, HashSet};
 
-enum STATUS {
+#[derive(Clone, Debug)]
+pub enum STATUS {
     Listen,
     SynSent,
     SynRcvd,
@@ -16,12 +17,12 @@ enum STATUS {
 }
 
 pub struct Socket {
-    socket_id: usize,
-    local_addr: Ipv4Addr,
-    local_port: u16,
-    dst_addr: Ipv4Addr,
-    dst_port: u16,
-    status: STATUS,
+    pub socket_id: usize,
+    pub local_addr: Ipv4Addr,
+    pub local_port: u16,
+    pub dst_addr: Ipv4Addr,
+    pub dst_port: u16,
+    pub status: STATUS,
 }
 
 struct TCB {
@@ -48,6 +49,22 @@ impl TCP {
             free_sockets: Vec::new(),
             bound_ports: HashSet::new(),
         }
+    }
+
+    pub fn get_sockets(&self) -> Vec<Socket> {
+        self.tc_blocks
+            .iter()
+            .map(|(sock, tcb)| {
+                Socket {
+                    socket_id: sock.clone(),
+                    local_addr: tcb.local_ip,
+                    local_port: tcb.local_port,
+                    dst_addr: tcb.dst_ip,
+                    dst_port: tcb.dst_port,
+                    status: tcb.state.clone(),
+                }
+            })
+            .collect()
     }
 
     pub fn v_socket(&mut self) -> Result<usize, String> {
@@ -109,7 +126,7 @@ impl TCP {
                             info!("TCB state changed to LISTEN");
                             return Ok(());
                         }
-			rand_port += 1;
+                        rand_port += 1;
                     }
                     Err("No available ports to bind!".to_owned())
                 }
@@ -126,7 +143,7 @@ impl TCP {
                 tcb.dst_port = port;
                 // tcb.status = STATUS::
                 // XXX TODO: Send SYN; change status
-		Ok(socket)
+                Ok(socket)
             }
             None => Err("No TCB associated with this connection!".to_owned()),
         }
