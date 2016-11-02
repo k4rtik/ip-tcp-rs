@@ -72,11 +72,17 @@ impl TCP {
         }
     }
 
-    pub fn v_bind(&mut self, socket: i32, addr: Ipv4Addr, port: u16) -> Result<i32, &'static str> {
-        debug!("Binding to IP {}, port {}", addr, port);
-        self.tcb_list.get_mut(&socket).unwrap().local_ip = addr;
-        self.tcb_list.get_mut(&socket).unwrap().local_port = port;
-        Ok(0)
+    pub fn v_bind(&mut self, socket: usize, addr: Ipv4Addr, port: u16) -> Result<(), String> {
+        info!("Binding to IP {}, port {}", addr, port);
+        match self.tc_blocks.get_mut(&socket) {
+            Some(tcb) => {
+                // TODO check for bound ports
+                tcb.local_ip = addr;
+                tcb.local_port = port;
+                Ok(())
+            }
+            None => Err("EBADF: sockfd is not a valid descriptor.".to_owned()),
+        }
     }
 
     pub fn v_listen(&mut self, socket: i32) -> Result<u32, &'static str> {
