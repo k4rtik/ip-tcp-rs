@@ -32,6 +32,7 @@ struct TCB {
     state: STATUS,
 }
 
+#[derive(Default)]
 pub struct TCP {
     // container of TCBs
     tc_blocks: HashMap<usize, TCB>,
