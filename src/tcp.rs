@@ -5,6 +5,13 @@ use std::thread;
 use std::time::Duration;
 
 use pnet::packet::tcp::MutableTcpPacket;
+use pnet::packet::Packet;
+
+use std::sync::{Arc, RwLock};
+use datalink::DataLink;
+use ip;
+use rip;
+// pub const INFINITY: u8 = 16;
 
 #[derive(Clone, Debug)]
 pub enum STATUS {
@@ -56,6 +63,7 @@ pub struct TcpParams {
 }
 
 pub fn build_tcp_packet(t_params: TcpParams, payload: &mut [u8]) -> MutableTcpPacket {
+    info!("Building TCP packet...");
     let mut tcp_packet = MutableTcpPacket::new(payload).unwrap();
     tcp_packet.set_source(t_params.src_port);
     tcp_packet.set_destination(t_params.dst_port);
@@ -98,6 +106,7 @@ impl TCP {
             Some(socket) => socket,
             None => self.tc_blocks.len(),
         };
+
         let tcb = TCB {
             local_ip: "0.0.0.0".parse::<Ipv4Addr>().unwrap(),
             local_port: 0,
@@ -106,6 +115,7 @@ impl TCP {
             state: STATUS::Closed,
         };
         debug!("{:?} {:?} ", sock_id, tcb);
+
         match self.tc_blocks.insert(sock_id, tcb) {
             Some(v) => {
                 warn!("overwrote exisiting value: {:?}", v);
@@ -165,11 +175,42 @@ impl TCP {
         }
     }
 
-    pub fn v_connect(&mut self, socket: usize, addr: Ipv4Addr, port: u16) -> Result<(), String> {
+    pub fn v_connect(&mut self,
+                     socket: usize,
+                     addr: Ipv4Addr,
+                     port: u16,
+                     dl_ctx: &Arc<RwLock<DataLink>>)
+                     -> Result<(), String> {
         match self.tc_blocks.get_mut(&socket) {
             Some(tcb) => {
                 tcb.dst_ip = addr;
                 tcb.dst_port = port;
+                let t_params = TcpParams {
+                    src_port: tcb.local_port,
+                    dst_port: tcb.dst_port,
+                    seq_num: 0,
+                    ack_num: 0,
+                };
+                let mut payload = vec![0u8; 1];
+                let segment = build_tcp_packet(t_params, &mut payload);
+                // debug!("TCP packet: {}", segment);
+                // let pkt_size = segment.minimum_packet_size(); Why is this failing?!
+                let pkt_sz = 20;
+                let ip_params = ip::IpParams {
+                    src: Ipv4Addr::new(127, 0, 0, 1),
+                    dst: addr,
+                    len: pkt_sz,
+                    tos: 0,
+                    opt: vec![],
+                };
+                let res = ip::send(dl_ctx,
+                                   None,
+                                   ip_params,
+                                   0, // what should go here?
+                                   rip::INFINITY,
+                                   segment.packet().to_vec(),
+                                   0,
+                                   true);
                 // tcb.status = STATUS::
                 // XXX TODO: Send SYN; change status
                 Ok(())

@@ -136,12 +136,15 @@ pub fn accept_cmd(tcp_ctx: &Arc<RwLock<TCP>>, port: u16) {
     });
 }
 
-pub fn connect_cmd(tcp_ctx: &Arc<RwLock<TCP>>, addr: Ipv4Addr, port: u16) {
+pub fn connect_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
+                   dl_ctx: &Arc<RwLock<DataLink>>,
+                   addr: Ipv4Addr,
+                   port: u16) {
     info!("Connecting...");
     let s = (*tcp_ctx.write().unwrap()).v_socket();
     match s {
         Ok(sock) => {
-            match (*tcp_ctx.write().unwrap()).v_connect(sock, addr, port) {
+            match (*tcp_ctx.write().unwrap()).v_connect(sock, addr, port, dl_ctx) {
                 Ok(_) => info!("Successfully connected to {}:{}", addr, port),
                 Err(e) => error!("v_connect() failed: {}", e),
             }
@@ -199,7 +202,7 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                                     let port = cmd_vec[2].parse::<u16>();
                                     match port {
                                         Ok(port) => {
-                                            connect_cmd(&tcp_ctx, addr, port);
+                                            connect_cmd(&tcp_ctx, &dl_ctx, addr, port);
                                         }
                                         Err(e) => println!("Port value not in format! \n {}", e),
                                     }
