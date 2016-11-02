@@ -145,6 +145,7 @@ impl TCP {
                     info!("TCB state changed to LISTEN");
                     Ok(())
                 } else {
+                    // NOTE we could alternatively query a random port and use if not bound
                     let mut rand_port = 1024;
                     while rand_port != 65535 {
                         if !self.bound_ports.contains(&rand_port) {
