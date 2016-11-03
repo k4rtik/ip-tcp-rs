@@ -7,7 +7,6 @@ use std::time::Duration;
 use pnet::packet::tcp::MutableTcpPacket;
 use pnet::packet::Packet;
 
-use std::sync::{Arc, RwLock};
 use datalink::DataLink;
 use ip;
 use rip;
@@ -69,6 +68,7 @@ pub fn build_tcp_packet(t_params: TcpParams, payload: &mut [u8]) -> MutableTcpPa
     tcp_packet.set_destination(t_params.dst_port);
     tcp_packet.set_sequence(t_params.seq_num);
     tcp_packet.set_acknowledgement(t_params.ack_num);
+    tcp_packet.set_flags(2);
     let cksum = tcp_packet.get_checksum();
     tcp_packet.set_checksum(cksum);
     tcp_packet
@@ -191,10 +191,10 @@ impl TCP {
                     seq_num: 0,
                     ack_num: 0,
                 };
-                let mut payload = vec![0u8; 1];
+                let mut payload = vec![0u8; 20];
                 let segment = build_tcp_packet(t_params, &mut payload);
                 // debug!("TCP packet: {}", segment);
-                // let pkt_size = segment.minimum_packet_size(); Why is this failing?!
+                let pkt_size = MutableTcpPacket::minimum_packet_size();// Why is this failing?!
                 let pkt_sz = 20;
                 let ip_params = ip::IpParams {
                     src: Ipv4Addr::new(127, 0, 0, 1),
