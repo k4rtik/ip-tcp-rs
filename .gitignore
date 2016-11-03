@@ -13,3 +13,5 @@ bootstrap/bin/util/node
 node
 *~
 history.txt
+*.swp
+*.bk
