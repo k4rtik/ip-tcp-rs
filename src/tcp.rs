@@ -4,11 +4,11 @@ use std::net::Ipv4Addr;
 use std::thread;
 use std::time::Duration;
 
-use pnet::packet::tcp::{self, MutableTcpPacket};
+use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpFlags};
 use pnet::packet::Packet;
 use pnet::packet::ip::IpNextHeaderProtocol;
 
-use datalink::DataLink;
+use datalink::{DataLink, Interface};
 use ip;
 use rip;
 
@@ -43,7 +43,8 @@ struct TCB {
     local_port: u16,
     dst_ip: Ipv4Addr,
     dst_port: u16,
-    state: STATUS,
+    iface: Option<Interface>,
+    state: STATUS, // TODO add more fields pertaining to window size, next_seq, etc
 }
 
 #[derive(Default)]
@@ -71,9 +72,9 @@ pub fn build_tcp_packet(t_params: TcpParams,
     tcp_packet.set_destination(t_params.dst_port);
     tcp_packet.set_sequence(t_params.seq_num);
     tcp_packet.set_acknowledgement(t_params.ack_num);
-    tcp_packet.set_flags(2);
+    tcp_packet.set_flags(TcpFlags::SYN);
     let local_addr = Ipv4Addr::new(127, 0, 0, 1);
-    let cksum = tcp::ipv4_checksum(&tcp_packet.to_immutable(), local_addr, addr);
+    let cksum = ipv4_checksum(&tcp_packet.to_immutable(), local_addr, addr);
     tcp_packet.set_checksum(cksum);
     debug!("TCP packet: {:?}", tcp_packet);
     tcp_packet
@@ -117,6 +118,7 @@ impl TCP {
             local_port: 0,
             dst_ip: "0.0.0.0".parse::<Ipv4Addr>().unwrap(),
             dst_port: 0,
+            iface: None,
             state: STATUS::Closed,
         };
         debug!("{:?} {:?} ", sock_id, tcb);
