@@ -4,14 +4,17 @@ use std::net::Ipv4Addr;
 use std::thread;
 use std::time::Duration;
 
+use pnet_macros_support::types::*;
 use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpFlags};
 use pnet::packet::Packet;
 
 use datalink::{DataLink, Interface};
 use ip;
-use rip;
+use rip::{self, RipCtx};
 
-#[derive(Clone, Debug)]
+const TCP_PROT: u8 = 6;
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum STATUS {
     Listen,
     SynSent,
@@ -59,10 +62,12 @@ pub struct TcpParams {
     dst_port: u16,
     seq_num: u32,
     ack_num: u32,
+    flags: u9be,
 }
 
 pub fn build_tcp_packet(t_params: TcpParams,
-                        addr: Ipv4Addr,
+                        src_addr: Ipv4Addr,
+                        dst_addr: Ipv4Addr,
                         payload: &mut [u8])
                         -> MutableTcpPacket {
     info!("Building TCP packet...");
@@ -71,9 +76,8 @@ pub fn build_tcp_packet(t_params: TcpParams,
     tcp_packet.set_destination(t_params.dst_port);
     tcp_packet.set_sequence(t_params.seq_num);
     tcp_packet.set_acknowledgement(t_params.ack_num);
-    tcp_packet.set_flags(TcpFlags::SYN);
-    let local_addr = Ipv4Addr::new(127, 0, 0, 1);
-    let cksum = ipv4_checksum(&tcp_packet.to_immutable(), local_addr, addr);
+    tcp_packet.set_flags(t_params.flags);
+    let cksum = ipv4_checksum(&tcp_packet.to_immutable(), src_addr, dst_addr);
     tcp_packet.set_checksum(cksum);
     debug!("TCP packet: {:?}", tcp_packet);
     tcp_packet
@@ -156,10 +160,23 @@ impl TCP {
         }
     }
 
+    fn get_unused_ip_port(&self, dl_ctx: &Arc<RwLock<DataLink>>) -> Option<(Ipv4Addr, u16)> {
+        let ifaces = (*dl_ctx.read().unwrap()).get_interfaces();
+        for port in 1024..65535 {
+            for iface in &ifaces {
+                if !self.bound_ports.contains(&(iface.src, port)) {
+                    return Some((iface.src, port));
+                }
+            }
+        }
+        None
+    }
+
     pub fn v_listen(&mut self,
                     dl_ctx: &Arc<RwLock<DataLink>>,
                     socket: usize)
                     -> Result<(), String> {
+        let ip_port = self.get_unused_ip_port(dl_ctx).unwrap();
         match self.tc_blocks.get_mut(&socket) {
             Some(tcb) => {
                 if tcb.local_port != 0 {
@@ -167,24 +184,12 @@ impl TCP {
                     info!("TCB state changed to LISTEN");
                     Ok(())
                 } else {
-                    // NOTE we could alternatively query a random port and use if not bound
-                    let mut port = 1024;
-                    while port != 65535 {
-                        let ifaces = (*dl_ctx.read().unwrap()).get_interfaces();
-                        for iface in ifaces {
-                            if !self.bound_ports.contains(&(iface.src, port)) {
-                                debug!("Assigning random port to {}", port);
-                                tcb.local_ip = iface.src;
-                                tcb.local_port = port;
-                                tcb.state = STATUS::Listen;
-                                self.bound_ports.insert((tcb.local_ip, port));
-                                info!("TCB state changed to LISTEN");
-                                return Ok(());
-                            }
-                        }
-                        port += 1;
-                    }
-                    Err("No available ports to bind!".to_owned())
+                    tcb.local_ip = ip_port.0;
+                    tcb.local_port = ip_port.1;
+                    tcb.state = STATUS::Listen;
+                    self.bound_ports.insert((tcb.local_ip, tcb.local_port));
+                    info!("TCB state changed to LISTEN");
+                    Ok(())
                 }
             }
             None => Err("No TCB associated with this connection!".to_owned()),
@@ -193,45 +198,55 @@ impl TCP {
 
     pub fn v_connect(&mut self,
                      dl_ctx: &Arc<RwLock<DataLink>>,
+                     rip_ctx: &Arc<RwLock<RipCtx>>,
                      socket: usize,
-                     addr: Ipv4Addr,
+                     dst_addr: Ipv4Addr,
                      port: u16)
                      -> Result<(), String> {
+        let unused_port = self.get_unused_ip_port(dl_ctx).unwrap().1;
         match self.tc_blocks.get_mut(&socket) {
             Some(tcb) => {
-                tcb.dst_ip = addr;
-                tcb.dst_port = port;
-                let t_params = TcpParams {
-                    src_port: tcb.local_port,
-                    dst_port: tcb.dst_port,
-                    seq_num: 0,
-                    ack_num: 0,
-                };
-                let mut pkt_buf = vec![0u8; 20];
-                let segment = build_tcp_packet(t_params, addr, &mut pkt_buf);
-                // TODO decide on packet size
-                let pkt_sz = 20;
-                let ip_params = ip::IpParams {
-                    src: Ipv4Addr::new(127, 0, 0, 1),
-                    dst: addr,
-                    len: pkt_sz,
-                    tos: 0,
-                    opt: vec![],
-                };
-                let res = ip::send(dl_ctx,
-                                   None,
-                                   ip_params,
-                                   6, // what should go here?
-                                   rip::INFINITY,
-                                   segment.packet().to_vec(),
-                                   0,
-                                   true);
-                debug!("res: {:?}", res.unwrap());
-                // tcb.status = STATUS::
-                // XXX TODO: Send SYN; change status
-                Ok(())
+                if tcb.state == STATUS::Closed {
+                    tcb.dst_ip = dst_addr;
+                    tcb.dst_port = port;
+                    tcb.local_ip = (*rip_ctx.read().unwrap()).get_next_hop(dst_addr).unwrap();
+                    tcb.local_port = unused_port;
+                    self.bound_ports.insert((tcb.local_ip, tcb.local_port));
+                    let t_params = TcpParams {
+                        src_port: tcb.local_port,
+                        dst_port: tcb.dst_port,
+                        seq_num: 0,
+                        ack_num: 0,
+                        flags: TcpFlags::SYN,
+                    };
+                    let mut pkt_buf = vec![0u8; 20];
+                    let segment = build_tcp_packet(t_params, tcb.local_ip, dst_addr, &mut pkt_buf);
+                    // TODO decide on packet size
+                    let pkt_sz = MutableTcpPacket::minimum_packet_size();
+                    let ip_params = ip::IpParams {
+                        src: Ipv4Addr::new(127, 0, 0, 1),
+                        dst: dst_addr,
+                        len: pkt_sz,
+                        tos: 0,
+                        opt: vec![],
+                    };
+                    let res = ip::send(dl_ctx,
+                                       None,
+                                       ip_params,
+                                       TCP_PROT,
+                                       rip::INFINITY,
+                                       segment.packet().to_vec(),
+                                       0,
+                                       true);
+                    debug!("res: {:?}", res.unwrap());
+                    // tcb.status = STATUS::
+                    // XXX TODO: Send SYN; change status
+                    Ok(())
+                } else {
+                    Err(format!("EISCONN/EALREADY: TCB not in CLOSED state: {:?}", tcb))
+                }
             }
-            None => Err("No TCB associated with this connection!".to_owned()),
+            None => Err("ENOTSOCK: No TCB associated with this connection!".to_owned()),
         }
     }
 }
