@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpFlags};
 use pnet::packet::Packet;
-use pnet::packet::ip::IpNextHeaderProtocol;
 
 use datalink::{DataLink, Interface};
 use ip;
@@ -211,7 +210,6 @@ impl TCP {
                 let mut pkt_buf = vec![0u8; 20];
                 let segment = build_tcp_packet(t_params, addr, &mut pkt_buf);
                 // TODO decide on packet size
-                let pkt_size = MutableTcpPacket::minimum_packet_size();
                 let pkt_sz = 20;
                 let ip_params = ip::IpParams {
                     src: Ipv4Addr::new(127, 0, 0, 1),

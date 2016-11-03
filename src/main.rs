@@ -153,6 +153,7 @@ pub fn connect_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
     }
 }
 
+#[allow(cyclomatic_complexity)]
 fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
             rip_ctx: Arc<RwLock<RipCtx>>,
             tcp_ctx: Arc<RwLock<TCP>>) {
