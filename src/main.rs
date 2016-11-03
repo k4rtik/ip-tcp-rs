@@ -4,6 +4,7 @@ extern crate env_logger;
 extern crate log;
 extern crate pnet;
 extern crate pnet_macros_support;
+extern crate rand;
 extern crate rustyline;
 
 mod datalink;
@@ -23,9 +24,9 @@ use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 use std::thread;
 
-use datalink::*;
-use rip::*;
-use tcp::*;
+use datalink::{DataLink, Interface, SocketAddrInterface, RouteInfo};
+use rip::{RipCtx, Route};
+use tcp::{Socket, TCP};
 
 fn parse_lnx(filename: &str) -> RouteInfo {
     let mut file = BufReader::new(File::open(filename).unwrap());
@@ -279,6 +280,7 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                             };
                             let res = ip::send(&dl_ctx,
                                                Some(&rip_ctx),
+                                               None,
                                                ip_params,
                                                proto,
                                                rip::INFINITY,
@@ -406,5 +408,5 @@ fn main() {
     let rip_ctx_clone = rip_ctx.clone();
     thread::spawn(move || rip::start_rip_module(&dl_ctx_clone, &rip_ctx_clone));
 
-    ip::start_ip_module(&dl_ctx, &rip_ctx, dl_rx); //, &tcp_ctx);
+    ip::start_ip_module(&dl_ctx, &rip_ctx, &tcp_ctx, dl_rx);
 }

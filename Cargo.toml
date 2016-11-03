@@ -13,6 +13,7 @@ env_logger = "*"
 log = "*"
 pnet = "*"
 pnet_macros_support = "*"
+rand = "*"
 rustyline = "1.0.0"
 
 [dependencies.clap]

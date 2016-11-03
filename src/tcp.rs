@@ -5,8 +5,9 @@ use std::thread;
 use std::time::Duration;
 
 use pnet_macros_support::types::*;
-use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpFlags};
+use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpPacket, TcpFlags};
 use pnet::packet::Packet;
+use rand;
 
 use datalink::{DataLink, Interface};
 use ip;
@@ -41,12 +42,15 @@ pub struct Socket {
 
 #[derive(Debug)]
 struct TCB {
+    // TODO add more fields pertaining to window size, next_seq, etc
     local_ip: Ipv4Addr,
     local_port: u16,
     dst_ip: Ipv4Addr,
     dst_port: u16,
     iface: Option<Interface>,
-    state: STATUS, // TODO add more fields pertaining to window size, next_seq, etc
+    state: STATUS,
+    seq_num: u32,
+    next_seq: u32,
 }
 
 #[derive(Default)]
@@ -123,6 +127,8 @@ impl TCP {
             dst_port: 0,
             iface: None,
             state: STATUS::Closed,
+            seq_num: 0,
+            next_seq: 0,
         };
         debug!("{:?} {:?} ", sock_id, tcb);
 
@@ -211,11 +217,12 @@ impl TCP {
                     tcb.dst_port = port;
                     tcb.local_ip = (*rip_ctx.read().unwrap()).get_next_hop(dst_addr).unwrap();
                     tcb.local_port = unused_port;
+                    tcb.seq_num = rand::random::<u32>();
                     self.bound_ports.insert((tcb.local_ip, tcb.local_port));
                     let t_params = TcpParams {
                         src_port: tcb.local_port,
                         dst_port: tcb.dst_port,
-                        seq_num: 0,
+                        seq_num: tcb.seq_num,
                         ack_num: 0,
                         flags: TcpFlags::SYN,
                     };
@@ -231,6 +238,7 @@ impl TCP {
                         opt: vec![],
                     };
                     let res = ip::send(dl_ctx,
+                                       Some(rip_ctx),
                                        None,
                                        ip_params,
                                        TCP_PROT,
@@ -265,4 +273,10 @@ pub fn v_accept(tcp_ctx: &Arc<RwLock<TCP>>,
     // switch state to ESTAB, need write lock
     thread::sleep(Duration::from_secs(10));
     Ok(0)
+}
+
+pub fn pkt_handler(tcp_ctx: &Arc<RwLock<TCP>>, tcp_pkt: &[u8], ip_params: ip::IpParams) {
+    let pkt = TcpPacket::new(tcp_pkt).unwrap();
+    debug!("{:?}", pkt);
+
 }

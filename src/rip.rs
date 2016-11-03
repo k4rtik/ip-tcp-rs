@@ -163,6 +163,7 @@ impl RipCtx {
                 debug!("SENDING TRIGGERED UPDATE: {:?}", rip_pkt);
                 let res = ip::send(dl_ctx,
                                    None,
+                                   None,
                                    ip_params,
                                    RIP_PROT,
                                    INFINITY,
@@ -330,6 +331,7 @@ fn send_routing_table(rip_ctx: &Arc<RwLock<RipCtx>>,
     trace!("SENDING RIP: {:?}", rip_pkt);
     let res = ip::send(dl_ctx,
                        None,
+                       None,
                        ip_params,
                        RIP_PROT,
                        INFINITY,
@@ -357,6 +359,7 @@ pub fn start_rip_module(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<Rip
         };
         debug!("SENDING RIP REQUEST: {:?}", rip_pkt);
         let res = ip::send(dl_ctx,
+                           None,
                            None,
                            ip_params,
                            RIP_PROT,
