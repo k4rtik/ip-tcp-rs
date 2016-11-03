@@ -150,7 +150,10 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>,
                                              opt: pkt.get_options(),
                                          });
                     }
-                    _ => warn!("Unsupported packet!"),
+                    _ => {
+                        warn!("Unsupported packet!");
+                        print_pkt_contents(pkt.to_immutable());
+                    }
                 }
             } else {
                 // info!("Forwarding to next hop");
