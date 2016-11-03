@@ -4,8 +4,9 @@ use std::net::Ipv4Addr;
 use std::thread;
 use std::time::Duration;
 
-use pnet::packet::tcp::MutableTcpPacket;
+use pnet::packet::tcp::{self, MutableTcpPacket};
 use pnet::packet::Packet;
+use pnet::packet::ip::IpNextHeaderProtocol;
 
 use datalink::DataLink;
 use ip;
@@ -60,7 +61,10 @@ pub struct TcpParams {
     ack_num: u32,
 }
 
-pub fn build_tcp_packet(t_params: TcpParams, payload: &mut [u8]) -> MutableTcpPacket {
+pub fn build_tcp_packet(t_params: TcpParams,
+                        addr: Ipv4Addr,
+                        payload: &mut [u8])
+                        -> MutableTcpPacket {
     info!("Building TCP packet...");
     let mut tcp_packet = MutableTcpPacket::new(payload).unwrap();
     tcp_packet.set_source(t_params.src_port);
@@ -68,8 +72,10 @@ pub fn build_tcp_packet(t_params: TcpParams, payload: &mut [u8]) -> MutableTcpPa
     tcp_packet.set_sequence(t_params.seq_num);
     tcp_packet.set_acknowledgement(t_params.ack_num);
     tcp_packet.set_flags(2);
-    let cksum = tcp_packet.get_checksum();
+    let local_addr = Ipv4Addr::new(127, 0, 0, 1);
+    let cksum = tcp::ipv4_checksum(&tcp_packet.to_immutable(), local_addr, addr);
     tcp_packet.set_checksum(cksum);
+    debug!("TCP packet: {:?}", tcp_packet);
     tcp_packet
 }
 
@@ -201,7 +207,7 @@ impl TCP {
                     ack_num: 0,
                 };
                 let mut pkt_buf = vec![0u8; 20];
-                let segment = build_tcp_packet(t_params, &mut pkt_buf);
+                let segment = build_tcp_packet(t_params, addr, &mut pkt_buf);
                 // TODO decide on packet size
                 let pkt_size = MutableTcpPacket::minimum_packet_size();
                 let pkt_sz = 20;
@@ -215,11 +221,12 @@ impl TCP {
                 let res = ip::send(dl_ctx,
                                    None,
                                    ip_params,
-                                   0, // what should go here?
+                                   6, // what should go here?
                                    rip::INFINITY,
                                    segment.packet().to_vec(),
                                    0,
                                    true);
+                debug!("res: {:?}", res.unwrap());
                 // tcb.status = STATUS::
                 // XXX TODO: Send SYN; change status
                 Ok(())
