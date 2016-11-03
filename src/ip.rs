@@ -200,9 +200,11 @@ fn print_pkt_contents(pkt: Ipv4Packet) {
     let len = get_ipv4_payload_length(&pkt);
     println!("Body length: {}", len);
     println!("Header:");
-    println!("\ttos: 0\n\tid: {}\n\tproto: 0", pkt.get_identification());
+    println!("\ttos: ?\n\tid: {}\n\tproto: {}",
+             pkt.get_identification(),
+             pkt.get_next_level_protocol());
     let message = Vec::from(&pkt.payload()[..len]);
-    println!("Payload: {}", String::from_utf8(message).unwrap());
+    println!("Payload: {:?}", String::from_utf8(message));
     print!("> ");
     io::stdout().flush().unwrap();
 }
