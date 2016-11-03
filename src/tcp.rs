@@ -10,7 +10,6 @@ use pnet::packet::Packet;
 use datalink::DataLink;
 use ip;
 use rip;
-// pub const INFINITY: u8 = 16;
 
 #[derive(Clone, Debug)]
 pub enum STATUS {
@@ -51,7 +50,7 @@ pub struct TCP {
     // container of TCBs
     tc_blocks: HashMap<usize, TCB>,
     free_sockets: Vec<usize>,
-    bound_ports: HashSet<u16>,
+    bound_ports: HashSet<(Ipv4Addr, u16)>,
 }
 
 pub struct TcpParams {
@@ -127,6 +126,7 @@ impl TCP {
 
     // TODO if addr is None, bind to any available (local) interface
     pub fn v_bind(&mut self,
+                  dl_ctx: &Arc<RwLock<DataLink>>,
                   socket: usize,
                   addr: Option<Ipv4Addr>,
                   port: u16)
@@ -134,20 +134,25 @@ impl TCP {
         info!("Binding to IP {:?}, port {}", addr, port);
         match self.tc_blocks.get_mut(&socket) {
             Some(tcb) => {
-                if !self.bound_ports.contains(&port) {
-                    tcb.local_ip = addr.unwrap_or_else(|| "0.0.0.0".parse::<Ipv4Addr>().unwrap());
-                    tcb.local_port = port;
-                    self.bound_ports.insert(port);
-                    Ok(())
-                } else {
-                    Err("Port already in use!".to_owned())
+                let ifaces = (*dl_ctx.read().unwrap()).get_interfaces();
+                for iface in ifaces {
+                    if !self.bound_ports.contains(&(iface.src, port)) {
+                        tcb.local_ip = addr.unwrap_or_else(|| iface.src);
+                        tcb.local_port = port;
+                        self.bound_ports.insert((tcb.local_ip, port));
+                        return Ok(());
+                    }
                 }
+                Err("Cannot assign requested address".to_owned())
             }
             None => Err("EBADF: sockfd is not a valid descriptor.".to_owned()),
         }
     }
 
-    pub fn v_listen(&mut self, socket: usize) -> Result<(), String> {
+    pub fn v_listen(&mut self,
+                    dl_ctx: &Arc<RwLock<DataLink>>,
+                    socket: usize)
+                    -> Result<(), String> {
         match self.tc_blocks.get_mut(&socket) {
             Some(tcb) => {
                 if tcb.local_port != 0 {
@@ -156,17 +161,21 @@ impl TCP {
                     Ok(())
                 } else {
                     // NOTE we could alternatively query a random port and use if not bound
-                    let mut rand_port = 1024;
-                    while rand_port != 65535 {
-                        if !self.bound_ports.contains(&rand_port) {
-                            debug!("Assigning random port to {}", rand_port);
-                            tcb.local_ip = "0.0.0.0".parse::<Ipv4Addr>().unwrap();
-                            tcb.local_port = rand_port;
-                            tcb.state = STATUS::Listen;
-                            info!("TCB state changed to LISTEN");
-                            return Ok(());
+                    let mut port = 1024;
+                    while port != 65535 {
+                        let ifaces = (*dl_ctx.read().unwrap()).get_interfaces();
+                        for iface in ifaces {
+                            if !self.bound_ports.contains(&(iface.src, port)) {
+                                debug!("Assigning random port to {}", port);
+                                tcb.local_ip = iface.src;
+                                tcb.local_port = port;
+                                tcb.state = STATUS::Listen;
+                                self.bound_ports.insert((tcb.local_ip, port));
+                                info!("TCB state changed to LISTEN");
+                                return Ok(());
+                            }
                         }
-                        rand_port += 1;
+                        port += 1;
                     }
                     Err("No available ports to bind!".to_owned())
                 }
@@ -176,10 +185,10 @@ impl TCP {
     }
 
     pub fn v_connect(&mut self,
+                     dl_ctx: &Arc<RwLock<DataLink>>,
                      socket: usize,
                      addr: Ipv4Addr,
-                     port: u16,
-                     dl_ctx: &Arc<RwLock<DataLink>>)
+                     port: u16)
                      -> Result<(), String> {
         match self.tc_blocks.get_mut(&socket) {
             Some(tcb) => {
@@ -191,10 +200,10 @@ impl TCP {
                     seq_num: 0,
                     ack_num: 0,
                 };
-                let mut payload = vec![0u8; 20];
-                let segment = build_tcp_packet(t_params, &mut payload);
-                // debug!("TCP packet: {}", segment);
-                let pkt_size = MutableTcpPacket::minimum_packet_size();// Why is this failing?!
+                let mut pkt_buf = vec![0u8; 20];
+                let segment = build_tcp_packet(t_params, &mut pkt_buf);
+                // TODO decide on packet size
+                let pkt_size = MutableTcpPacket::minimum_packet_size();
                 let pkt_sz = 20;
                 let ip_params = ip::IpParams {
                     src: Ipv4Addr::new(127, 0, 0, 1),

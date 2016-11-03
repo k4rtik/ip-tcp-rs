@@ -102,7 +102,7 @@ fn print_sockets(sockets: Vec<Socket>) {
     }
 }
 
-pub fn accept_cmd(tcp_ctx: &Arc<RwLock<TCP>>, port: u16) {
+pub fn accept_cmd(tcp_ctx: &Arc<RwLock<TCP>>, dl_ctx: &Arc<RwLock<DataLink>>, port: u16) {
     info!("Creating socket...");
     let s = (*tcp_ctx.write().unwrap()).v_socket();
     // TODO think if this scoping is necessary to prevent deadlock?
@@ -110,9 +110,9 @@ pub fn accept_cmd(tcp_ctx: &Arc<RwLock<TCP>>, port: u16) {
         let tcp = &mut (*tcp_ctx.write().unwrap());
         match s {
             Ok(ref sock) => {
-                match tcp.v_bind(*sock, None, port) {
+                match tcp.v_bind(dl_ctx, *sock, None, port) {
                     Ok(_) => {
-                        match tcp.v_listen(*sock) {
+                        match tcp.v_listen(dl_ctx, *sock) {
                             Ok(_) => trace!("v_listen() succeeded"),
                             Err(e) => error!("v_listen: {}", e),
                         }
@@ -144,7 +144,7 @@ pub fn connect_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
     let s = (*tcp_ctx.write().unwrap()).v_socket();
     match s {
         Ok(sock) => {
-            match (*tcp_ctx.write().unwrap()).v_connect(sock, addr, port, dl_ctx) {
+            match (*tcp_ctx.write().unwrap()).v_connect(dl_ctx, sock, addr, port) {
                 Ok(_) => info!("Successfully connected to {}:{}", addr, port),
                 Err(e) => error!("v_connect() failed: {}", e),
             }
@@ -186,7 +186,7 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                         } else {
                             let port = cmd_vec[1].parse::<u16>();
                             match port {
-                                Ok(port) => accept_cmd(&tcp_ctx, port),
+                                Ok(port) => accept_cmd(&tcp_ctx, &dl_ctx, port),
                                 Err(e) => println!("Error {}", e),
                             }
 
