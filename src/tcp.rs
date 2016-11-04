@@ -282,13 +282,28 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
 
     // TODO verify checksum
     let seq_num = pkt.get_sequence();
+    let flags = pkt.get_flags();
 
     let (lip, lp, dip, dp) =
         (ip_params.dst, pkt.get_destination(), ip_params.src, pkt.get_source());
 
-    for (_, tcb) in &mut (*tcp_ctx.write().unwrap()).tc_blocks {
-        if tcb.local_ip == lip && tcb.local_port == lp && tcb.dst_ip == dip && tcb.dst_port == dp {
+    let unused_port = (*tcp_ctx.read().unwrap()).get_unused_ip_port(dl_ctx).unwrap().1;
+    let tcp = &mut *tcp_ctx.write().unwrap();
 
+    let mut need_new_tcb = false;
+    let mut ntcb = TCB {
+        local_ip: "0.0.0.0".parse::<Ipv4Addr>().unwrap(),
+        local_port: 0,
+        dst_ip: "0.0.0.0".parse::<Ipv4Addr>().unwrap(),
+        dst_port: 0,
+        state: STATUS::Closed,
+        seq_num: 0,
+        next_seq: 0,
+    };
+
+    for (_, tcb) in &mut tcp.tc_blocks {
+        // regular socket
+        if tcb.local_ip == lip && tcb.local_port == lp && tcb.dst_ip == dip && tcb.dst_port == dp {
             if tcb.state == STATUS::SynSent {
                 tcb.next_seq = seq_num + 1;
                 let t_params = TcpParams {
@@ -324,5 +339,66 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
             }
             break;
         }
+
+        // listening socket
+        if tcb.local_ip == lip && tcb.local_port == lp {
+            if tcb.state == STATUS::Listen {
+                ntcb.local_ip = tcb.local_ip;
+                ntcb.local_port = unused_port;
+                ntcb.dst_ip = dip;
+                ntcb.dst_port = dp;
+                ntcb.state = STATUS::SynRcvd;
+                ntcb.seq_num = rand::random::<u32>();
+                ntcb.next_seq = seq_num + 1;
+
+                need_new_tcb = true;
+
+                tcp.bound_ports.insert((ntcb.local_ip, ntcb.local_port));
+
+                let t_params = TcpParams {
+                    src_port: tcb.local_port,
+                    dst_port: ntcb.dst_port,
+                    seq_num: ntcb.seq_num,
+                    ack_num: ntcb.next_seq,
+                    flags: TcpFlags::SYN | TcpFlags::ACK,
+                };
+                let mut pkt_buf = vec![0u8; 20];
+                let segment = build_tcp_packet(t_params, lip, dip, &mut pkt_buf);
+                let pkt_sz = MutableTcpPacket::minimum_packet_size();
+                let ip_params = ip::IpParams {
+                    src: Ipv4Addr::new(127, 0, 0, 1),
+                    dst: dip,
+                    len: pkt_sz,
+                    tos: 0,
+                    opt: vec![],
+                };
+                debug!("{:?}", segment);
+                ip::send(dl_ctx,
+                         Some(rip_ctx),
+                         None,
+                         ip_params,
+                         TCP_PROT,
+                         rip::INFINITY,
+                         segment.packet().to_vec(),
+                         0,
+                         true)
+                    .unwrap();
+            } else {
+                warn!("TCB not in LISTEN state or SYN not set: {:?} {:?}",
+                      tcb,
+                      flags);
+            }
+            break;
+        }
+    }
+
+    if need_new_tcb {
+        let sock_id = match tcp.free_sockets.pop() {
+            Some(socket) => socket,
+            None => tcp.tc_blocks.len(),
+        };
+
+        info!("v_accept returned: {}", sock_id);
+        tcp.tc_blocks.insert(sock_id, ntcb);
     }
 }
