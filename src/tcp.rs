@@ -209,6 +209,7 @@ impl TCP {
                      dst_addr: Ipv4Addr,
                      port: u16)
                      -> Result<(), String> {
+        // send SYN
         let unused_port = self.get_unused_ip_port(dl_ctx).unwrap().1;
         match self.tc_blocks.get_mut(&socket) {
             Some(tcb) => {
@@ -228,7 +229,6 @@ impl TCP {
                     };
                     let mut pkt_buf = vec![0u8; 20];
                     let segment = build_tcp_packet(t_params, tcb.local_ip, dst_addr, &mut pkt_buf);
-                    // TODO decide on packet size
                     let pkt_sz = MutableTcpPacket::minimum_packet_size();
                     let ip_params = ip::IpParams {
                         src: Ipv4Addr::new(127, 0, 0, 1),
@@ -237,18 +237,17 @@ impl TCP {
                         tos: 0,
                         opt: vec![],
                     };
-                    let res = ip::send(dl_ctx,
-                                       Some(rip_ctx),
-                                       None,
-                                       ip_params,
-                                       TCP_PROT,
-                                       rip::INFINITY,
-                                       segment.packet().to_vec(),
-                                       0,
-                                       true);
-                    debug!("res: {:?}", res.unwrap());
-                    // tcb.status = STATUS::
-                    // XXX TODO: Send SYN; change status
+                    ip::send(dl_ctx,
+                             Some(rip_ctx),
+                             None,
+                             ip_params,
+                             TCP_PROT,
+                             rip::INFINITY,
+                             segment.packet().to_vec(),
+                             0,
+                             true)
+                        .unwrap();
+                    tcb.state = STATUS::SynSent;
                     Ok(())
                 } else {
                     Err(format!("EISCONN/EALREADY: TCB not in CLOSED state: {:?}", tcb))
@@ -275,8 +274,57 @@ pub fn v_accept(tcp_ctx: &Arc<RwLock<TCP>>,
     Ok(0)
 }
 
-pub fn pkt_handler(tcp_ctx: &Arc<RwLock<TCP>>, tcp_pkt: &[u8], ip_params: ip::IpParams) {
+pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
+                   rip_ctx: &Arc<RwLock<RipCtx>>,
+                   tcp_ctx: &Arc<RwLock<TCP>>,
+                   tcp_pkt: &[u8],
+                   ip_params: ip::IpParams) {
     let pkt = TcpPacket::new(tcp_pkt).unwrap();
     debug!("{:?}", pkt);
 
+    // TODO verify checksum
+    let seq_num = pkt.get_sequence();
+
+    let (lip, lp, dip, dp) =
+        (ip_params.dst, pkt.get_destination(), ip_params.src, pkt.get_source());
+
+    for (_, tcb) in &mut (*tcp_ctx.write().unwrap()).tc_blocks {
+        if tcb.local_ip == lip && tcb.local_port == lp && tcb.dst_ip == dip && tcb.dst_port == dp {
+
+            if tcb.state == STATUS::SynSent {
+                tcb.next_seq = seq_num + 1;
+                let t_params = TcpParams {
+                    src_port: tcb.local_port,
+                    dst_port: tcb.dst_port,
+                    seq_num: tcb.seq_num,
+                    ack_num: tcb.next_seq,
+                    flags: TcpFlags::ACK,
+                };
+                let mut pkt_buf = vec![0u8; 20];
+                let segment = build_tcp_packet(t_params, lip, dip, &mut pkt_buf);
+                let pkt_sz = MutableTcpPacket::minimum_packet_size();
+                let ip_params = ip::IpParams {
+                    src: Ipv4Addr::new(127, 0, 0, 1),
+                    dst: dip,
+                    len: pkt_sz,
+                    tos: 0,
+                    opt: vec![],
+                };
+                ip::send(dl_ctx,
+                         Some(rip_ctx),
+                         None,
+                         ip_params,
+                         TCP_PROT,
+                         rip::INFINITY,
+                         segment.packet().to_vec(),
+                         0,
+                         true)
+                    .unwrap();
+                tcb.state = STATUS::Estab;
+            } else {
+                warn!("TCB not in SYN_SENT state: {:?}", tcb);
+            }
+            break;
+        }
+    }
 }

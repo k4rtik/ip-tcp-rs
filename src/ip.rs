@@ -142,7 +142,9 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>,
                         print_pkt_contents(pkt.to_immutable());
                     }
                     IpNextHeaderProtocol(6) => {
-                        tcp::pkt_handler(tcp_ctx.unwrap(),
+                        tcp::pkt_handler(dl_ctx,
+                                         rip_ctx,
+                                         tcp_ctx.unwrap(),
                                          pkt.payload(),
                                          IpParams {
                                              src: pkt.get_source(),
