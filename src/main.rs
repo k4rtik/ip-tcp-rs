@@ -130,7 +130,7 @@ pub fn accept_cmd(tcp_ctx: &Arc<RwLock<TCP>>, dl_ctx: &Arc<RwLock<DataLink>>, po
     thread::spawn(move || {
         loop {
             match tcp::v_accept(&tcp_ctx_clone, sock, None) {
-                Ok(socket) => info!("v_accept returned {}", socket),
+                Ok(socket) => trace!("v_accept returned {}", socket),
                 Err(e) => error!("v_accept: {}", e),
             }
         }

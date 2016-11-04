@@ -9,7 +9,7 @@ use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpPacket, TcpFlags};
 use pnet::packet::Packet;
 use rand;
 
-use datalink::{DataLink, Interface};
+use datalink::DataLink;
 use ip;
 use rip::{self, RipCtx};
 
@@ -47,7 +47,6 @@ struct TCB {
     local_port: u16,
     dst_ip: Ipv4Addr,
     dst_port: u16,
-    iface: Option<Interface>,
     state: STATUS,
     seq_num: u32,
     next_seq: u32,
@@ -125,7 +124,6 @@ impl TCP {
             local_port: 0,
             dst_ip: "0.0.0.0".parse::<Ipv4Addr>().unwrap(),
             dst_port: 0,
-            iface: None,
             state: STATUS::Closed,
             seq_num: 0,
             next_seq: 0,
