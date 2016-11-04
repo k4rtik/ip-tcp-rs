@@ -50,6 +50,7 @@ struct TCB {
     state: STATUS,
     seq_num: u32,
     next_seq: u32,
+    conn_socks: Vec<usize>,
 }
 
 #[derive(Default)]
@@ -127,6 +128,7 @@ impl TCP {
             state: STATUS::Closed,
             seq_num: 0,
             next_seq: 0,
+            conn_socks: Vec::new(),
         };
         debug!("{:?} {:?} ", sock_id, tcb);
 
@@ -291,6 +293,9 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
     let tcp = &mut *tcp_ctx.write().unwrap();
 
     let mut need_new_tcb = false;
+    let mut need_estab = false;
+    let mut child_socks = Vec::new();
+    let mut parent_tcb_sock = 65535;
     let mut ntcb = TCB {
         local_ip: "0.0.0.0".parse::<Ipv4Addr>().unwrap(),
         local_port: 0,
@@ -299,9 +304,10 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
         state: STATUS::Closed,
         seq_num: 0,
         next_seq: 0,
+        conn_socks: Vec::new(),
     };
 
-    for (_, tcb) in &mut tcp.tc_blocks {
+    for (sock, tcb) in &mut tcp.tc_blocks {
         // regular socket
         if tcb.local_ip == lip && tcb.local_port == lp && tcb.dst_ip == dip && tcb.dst_port == dp {
             if tcb.state == STATUS::SynSent {
@@ -342,7 +348,8 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
 
         // listening socket
         if tcb.local_ip == lip && tcb.local_port == lp {
-            if tcb.state == STATUS::Listen {
+            // new connection
+            if tcb.state == STATUS::Listen && flags == TcpFlags::SYN {
                 ntcb.local_ip = tcb.local_ip;
                 ntcb.local_port = unused_port;
                 ntcb.dst_ip = dip;
@@ -351,6 +358,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                 ntcb.seq_num = rand::random::<u32>();
                 ntcb.next_seq = seq_num + 1;
 
+                parent_tcb_sock = *sock;
                 need_new_tcb = true;
 
                 tcp.bound_ports.insert((ntcb.local_ip, ntcb.local_port));
@@ -384,9 +392,9 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                          true)
                     .unwrap();
             } else {
-                warn!("TCB not in LISTEN state or SYN not set: {:?} {:?}",
-                      tcb,
-                      flags);
+                // existing connection
+                need_estab = true;
+                child_socks = tcb.conn_socks.clone();
             }
             break;
         }
@@ -398,7 +406,16 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
             None => tcp.tc_blocks.len(),
         };
 
+        tcp.tc_blocks.get_mut(&parent_tcb_sock).unwrap().conn_socks.push(sock_id);
+
         info!("v_accept returned: {}", sock_id);
         tcp.tc_blocks.insert(sock_id, ntcb);
+    } else if need_estab {
+        for child_sock in &child_socks {
+            let child_tcb = tcp.tc_blocks.get_mut(child_sock).unwrap();
+            if child_tcb.dst_ip == dip && child_tcb.dst_port == dp {
+                child_tcb.state = STATUS::Estab;
+            }
+        }
     }
 }
