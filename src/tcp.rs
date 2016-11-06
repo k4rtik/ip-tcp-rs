@@ -323,7 +323,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                 let segment = build_tcp_packet(t_params, lip, dip, &mut pkt_buf);
                 let pkt_sz = MutableTcpPacket::minimum_packet_size();
                 let ip_params = ip::IpParams {
-                    src: Ipv4Addr::new(127, 0, 0, 1),
+                    src: lip,
                     dst: dip,
                     len: pkt_sz,
                     tos: 0,
@@ -374,7 +374,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                 let segment = build_tcp_packet(t_params, lip, dip, &mut pkt_buf);
                 let pkt_sz = MutableTcpPacket::minimum_packet_size();
                 let ip_params = ip::IpParams {
-                    src: Ipv4Addr::new(127, 0, 0, 1),
+                    src: lip,
                     dst: dip,
                     len: pkt_sz,
                     tos: 0,
