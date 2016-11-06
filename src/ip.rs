@@ -131,68 +131,64 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>,
                  tcp_ctx: Option<&Arc<RwLock<TCP>>>,
                  pkt: &mut MutableIpv4Packet) {
     // TODO check for fragmentation
-    let dst = pkt.get_destination();
-    let iface = (*dl_ctx.read().unwrap()).get_interface_by_src(dst).unwrap();
-    if iface.enabled {
-        if pkt.get_checksum() == ipv4::checksum(&pkt.to_immutable()) {
-            let dst = pkt.get_destination();
-            if (*dl_ctx.read().unwrap()).is_local_address(dst) {
-                match pkt.get_next_level_protocol() {
-                    IpNextHeaderProtocol(0) => {
-                        print_pkt_contents(pkt.to_immutable());
-                    }
-                    IpNextHeaderProtocol(6) => {
-                        tcp::pkt_handler(dl_ctx,
-                                         rip_ctx,
-                                         tcp_ctx.unwrap(),
-                                         pkt.payload(),
-                                         IpParams {
-                                             src: pkt.get_source(),
-                                             dst: pkt.get_destination(),
-                                             len: get_ipv4_payload_length(&pkt.to_immutable()),
-                                             tos: 0, // XXX hardcoded, incorrect
-                                             opt: pkt.get_options(),
-                                         });
-                    }
-                    IpNextHeaderProtocol(200) => {
-                        rip::pkt_handler(rip_ctx,
-                                         dl_ctx,
-                                         pkt.payload(),
-                                         IpParams {
-                                             src: pkt.get_source(),
-                                             dst: pkt.get_destination(),
-                                             len: get_ipv4_payload_length(&pkt.to_immutable()),
-                                             tos: 0, // XXX hardcoded, incorrect
-                                             opt: pkt.get_options(),
-                                         });
-                    }
-                    _ => {
-                        warn!("Unsupported packet!");
-                        print_pkt_contents(pkt.to_immutable());
-                    }
+    if pkt.get_checksum() == ipv4::checksum(&pkt.to_immutable()) {
+        let dst = pkt.get_destination();
+        if (*dl_ctx.read().unwrap()).is_local_address(dst) {
+            match pkt.get_next_level_protocol() {
+                IpNextHeaderProtocol(0) => {
+                    print_pkt_contents(pkt.to_immutable());
                 }
-            } else {
-                // info!("Forwarding to next hop");
-                match (*rip_ctx.read().unwrap()).get_next_hop(dst) {
-                    Some(hop) => {
-                        if pkt.get_ttl() > 0 {
-                            let old_ttl = pkt.get_ttl();
-                            pkt.set_ttl(old_ttl);
-                            let cksum = ipv4::checksum(&pkt.to_immutable());
-                            pkt.set_checksum(cksum);
-                            (*dl_ctx.read().unwrap())
-                                .send_packet(hop, pkt.to_immutable())
-                                .unwrap()
-                        } else {
-                            warn!("TTL reached 0, destroying packet");
-                        }
-                    }
-                    None => warn!("No route to {}", dst),
+                IpNextHeaderProtocol(6) => {
+                    tcp::pkt_handler(dl_ctx,
+                                     rip_ctx,
+                                     tcp_ctx.unwrap(),
+                                     pkt.payload(),
+                                     IpParams {
+                                         src: pkt.get_source(),
+                                         dst: pkt.get_destination(),
+                                         len: get_ipv4_payload_length(&pkt.to_immutable()),
+                                         tos: 0, // XXX hardcoded, incorrect
+                                         opt: pkt.get_options(),
+                                     });
+                }
+                IpNextHeaderProtocol(200) => {
+                    rip::pkt_handler(rip_ctx,
+                                     dl_ctx,
+                                     pkt.payload(),
+                                     IpParams {
+                                         src: pkt.get_source(),
+                                         dst: pkt.get_destination(),
+                                         len: get_ipv4_payload_length(&pkt.to_immutable()),
+                                         tos: 0, // XXX hardcoded, incorrect
+                                         opt: pkt.get_options(),
+                                     });
+                }
+                _ => {
+                    warn!("Unsupported packet!");
+                    print_pkt_contents(pkt.to_immutable());
                 }
             }
         } else {
-            warn!("Invalid packet, discarding");
+            // info!("Forwarding to next hop");
+            match (*rip_ctx.read().unwrap()).get_next_hop(dst) {
+                Some(hop) => {
+                    if pkt.get_ttl() > 0 {
+                        let old_ttl = pkt.get_ttl();
+                        pkt.set_ttl(old_ttl);
+                        let cksum = ipv4::checksum(&pkt.to_immutable());
+                        pkt.set_checksum(cksum);
+                        (*dl_ctx.read().unwrap())
+                            .send_packet(hop, pkt.to_immutable())
+                            .unwrap()
+                    } else {
+                        warn!("TTL reached 0, destroying packet");
+                    }
+                }
+                None => warn!("No route to {}", dst),
+            }
         }
+    } else {
+        warn!("Invalid packet, discarding");
     }
 }
 
