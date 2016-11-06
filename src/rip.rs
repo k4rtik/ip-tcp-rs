@@ -160,7 +160,7 @@ impl RipCtx {
                     tos: 0,
                     opt: vec![],
                 };
-                debug!("SENDING TRIGGERED UPDATE: {:?}", rip_pkt);
+                trace!("SENDING TRIGGERED UPDATE: {:?}", rip_pkt);
                 let res = ip::send(dl_ctx,
                                    None,
                                    None,
@@ -171,7 +171,7 @@ impl RipCtx {
                                    0,
                                    true);
                 match res {
-                    Ok(_) => info!("Triggered update sent succesfully on {:?}", iface.dst),
+                    Ok(_) => trace!("Triggered update sent succesfully on {:?}", iface.dst),
                     Err(str) => warn!("{}", str),
                 }
             }
