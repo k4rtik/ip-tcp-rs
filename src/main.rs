@@ -161,7 +161,7 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
             rip_ctx: Arc<RwLock<RipCtx>>,
             tcp_ctx: Arc<RwLock<TCP>>) {
     let mut rl = Editor::<()>::new();
-    if let Err(_) = rl.load_history("history.txt") {
+    if rl.load_history("history.txt").is_err() {
         warn!("No previous history.");
     }
     loop {
