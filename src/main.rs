@@ -177,7 +177,7 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                         print_interfaces(interfaces);
                     }
                     "routes" | "lr" => {
-                        let routes = (*rip_ctx.read().unwrap()).get_routes();
+                        let routes = (*rip_ctx.read().unwrap()).get_routes(None);
                         print_routes(routes);
                     }
                     "sockets" | "ls" => {

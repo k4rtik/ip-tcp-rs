@@ -212,7 +212,8 @@ impl RipCtx {
                     trace!("BEFORE routing_table: {:?}", self.routing_table);
                     match self.routing_table.iter_mut().find(|rentry| rentry.dst == route.dst) {
                         Some(rentry) => {
-                            rentry.metric = if route.cost < rentry.metric {
+                            rentry.metric = if route.cost < rentry.metric ||
+                                               route.cost == INFINITY {
                                 rentry.route_changed = true;
                                 route.cost
                             } else {
@@ -252,14 +253,18 @@ impl RipCtx {
         self.send_triggered_updates(dl_ctx, source);
     }
 
-    pub fn get_routes(&self) -> Vec<Route> {
+    pub fn get_routes(&self, route_src: Option<&Ipv4Addr>) -> Vec<Route> {
         self.routing_table
             .iter()
-            .map(|rentry| {
-                Route {
-                    dst: rentry.dst,
-                    src: rentry.next_hop,
-                    cost: rentry.metric,
+            .filter_map(|rentry| {
+                if route_src.is_none() || rentry.route_src != *route_src.unwrap() {
+                    Some(Route {
+                        dst: rentry.dst,
+                        src: rentry.next_hop,
+                        cost: rentry.metric,
+                    })
+                } else {
+                    None
                 }
             })
             .collect()
@@ -281,16 +286,17 @@ impl RipCtx {
     }
 }
 
-fn build_rip_entry_pkt(rip_ctx: &Arc<RwLock<RipCtx>>, entry_id: usize, packet: &mut [u8]) {
+fn build_rip_entry_pkt(entry: &Route, packet: &mut [u8]) {
     let mut ripe_pkt = MutableRipEntryPacket::new(packet).unwrap();
-
-    let entry = &(*rip_ctx.read().unwrap()).get_routes()[entry_id];
-
     ripe_pkt.set_cost(entry.cost as u32);
     ripe_pkt.set_address(entry.dst);
 }
 
-fn build_rip_pkt(rip_ctx: &Arc<RwLock<RipCtx>>, packet: &mut [u8], request: bool) -> usize {
+fn build_rip_pkt(rip_ctx: &Arc<RwLock<RipCtx>>,
+                 packet: &mut [u8],
+                 route_src: Option<&Ipv4Addr>,
+                 request: bool)
+                 -> usize {
     let num_entries = if request {
         let mut rip_pkt = MutableRipPacket::new(packet).unwrap();
         rip_pkt.set_command(1);
@@ -299,15 +305,24 @@ fn build_rip_pkt(rip_ctx: &Arc<RwLock<RipCtx>>, packet: &mut [u8], request: bool
     } else {
         let mut rip_pkt = MutableRipPacket::new(packet).unwrap();
         rip_pkt.set_command(2);
-        let ne = (*rip_ctx.read().unwrap()).get_num_entries();
-        rip_pkt.set_num_entries(ne as u16);
-        ne
+        (*rip_ctx.read().unwrap()).get_num_entries()
     };
 
     let mut idx = 4;
     let mut entry_id = 0;
+    let entries = &(*rip_ctx.read().unwrap()).get_routes(route_src);
+    debug!("Entries going into RIP packet: {:?}", entries);
+    let num_entries = if entries.len() < num_entries {
+        entries.len()
+    } else {
+        num_entries
+    };
+    {
+        let mut rip_pkt = MutableRipPacket::new(packet).unwrap();
+        rip_pkt.set_num_entries(num_entries as u16);
+    }
     while entry_id < num_entries {
-        build_rip_entry_pkt(rip_ctx, entry_id, &mut packet[idx..]);
+        build_rip_entry_pkt(&entries[entry_id], &mut packet[idx..]);
         entry_id += 1;
         idx += 8;
     }
@@ -319,7 +334,7 @@ fn send_routing_table(rip_ctx: &Arc<RwLock<RipCtx>>,
                       dl_ctx: &Arc<RwLock<DataLink>>,
                       dst: Ipv4Addr) {
     let mut rip_buf = vec![0u8; RIP_MAX_SIZE];
-    let pkt_size = build_rip_pkt(rip_ctx, &mut rip_buf, false);
+    let pkt_size = build_rip_pkt(rip_ctx, &mut rip_buf, Some(&dst), false);
     let rip_pkt = RipPacket::new(&rip_buf).unwrap();
     let ip_params = ip::IpParams {
         src: Ipv4Addr::new(127, 0, 0, 1),
@@ -348,7 +363,7 @@ pub fn start_rip_module(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<Rip
     let interfaces = (*dl_ctx.read().unwrap()).get_interfaces();
     for iface in interfaces {
         let mut rip_buf = vec![0u8; 4];
-        let pkt_size = build_rip_pkt(rip_ctx, &mut rip_buf, true);
+        let pkt_size = build_rip_pkt(rip_ctx, &mut rip_buf, None, true);
         let rip_pkt = RipPacket::new(&rip_buf).unwrap();
         let ip_params = ip::IpParams {
             src: Ipv4Addr::new(127, 0, 0, 1),
