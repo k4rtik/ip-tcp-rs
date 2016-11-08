@@ -155,6 +155,14 @@ pub fn connect_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
     }
 }
 
+pub fn send_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
+                dl_ctx: &Arc<RwLock<DataLink>>,
+                rip_ctx: &Arc<RwLock<RipCtx>>, socket: usize, message: String) {
+	info!("Writing...");
+	let bytes = tcp::v_write(tcp_ctx, dl_ctx, rip_ctx, socket, message);
+	
+}
+
 #[allow(unknown_lints)]
 #[allow(cyclomatic_complexity)]
 fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
@@ -262,35 +270,13 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                     }
                     "send" | "s" | "w" => {
                         // TODO this implementation is for IP, write one for TCP
-                        if cmd_vec.len() != 4 {
+                        if cmd_vec.len() != 3 {
                             println!("Missing parameters");
-                        } else if !is_ip(cmd_vec[1]) {
-                            println!("IP address is not in format!");
                         } else {
-                            let dest_ip = cmd_vec[1].parse::<Ipv4Addr>().unwrap();
-                            let proto = cmd_vec[2].parse::<u8>().unwrap();
-                            let string = cmd_vec[3];
-                            let message = string.to_string().into_bytes();
-                            let ip_params = ip::IpParams {
-                                src: Ipv4Addr::new(127, 0, 0, 1),
-                                dst: dest_ip,
-                                len: message.len(),
-                                tos: 0,
-                                opt: vec![],
-                            };
-                            let res = ip::send(&dl_ctx,
-                                               Some(&rip_ctx),
-                                               None,
-                                               ip_params,
-                                               proto,
-                                               rip::INFINITY,
-                                               message,
-                                               0,
-                                               true);
-                            match res {
-                                Ok(_) => info!("Message sent succesfully"),
-                                Err(str) => warn!("{}", str),
-                            }
+                            let socket = cmd_vec[1].parse::<usize>().unwrap();
+                            let string = cmd_vec[2];
+                            let message = string.to_string();
+                            let ret = send_cmd(&tcp_ctx, &dl_ctx, &rip_ctx, socket, message);
                         }
                     }
                     "recv" | "r" => {

@@ -274,6 +274,20 @@ pub fn v_accept(tcp_ctx: &Arc<RwLock<TCP>>,
     Ok(0)
 }
 
+
+pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
+               dl_ctx: &Arc<RwLock<DataLink>>,
+               rip_ctx: &Arc<RwLock<RipCtx>>,
+               socket: usize,
+               payload: String) -> Result<usize, String> {
+	let tcp = &mut *tcp_ctx.write().unwrap();
+	match tcp.tc_blocks.get_mut(&socket) {
+	Some(tcb) => {
+		Ok(0)
+	}
+	None => Err("Error: No connection setup!".to_owned())
+	}
+}
 pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                    rip_ctx: &Arc<RwLock<RipCtx>>,
                    tcp_ctx: &Arc<RwLock<TCP>>,
