@@ -14,6 +14,7 @@ use ip;
 use rip::{self, RipCtx};
 
 const TCP_PROT: u8 = 6;
+const TCP_MAX_WINDOW_SZ: usize = 65536;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum STATUS {
@@ -51,6 +52,16 @@ struct TCB {
     seq_num: u32,
     next_seq: u32,
     conn_socks: Vec<usize>,
+
+    window_sz: usize,
+    s_window: Vec<u8>,
+    r_window: Vec<u8>,
+    snd_unackd: usize,
+    snd_nxt: usize,
+    snd_ackd: usize,
+    recv_nxt: usize,
+    recv_ackd: usize,
+    recv_rd: usize,
 }
 
 #[derive(Default)]
@@ -67,6 +78,7 @@ pub struct TcpParams {
     seq_num: u32,
     ack_num: u32,
     flags: u9be,
+    window: u16be,
 }
 
 pub fn build_tcp_packet(t_params: TcpParams,
@@ -81,6 +93,7 @@ pub fn build_tcp_packet(t_params: TcpParams,
     tcp_packet.set_sequence(t_params.seq_num);
     tcp_packet.set_acknowledgement(t_params.ack_num);
     tcp_packet.set_flags(t_params.flags);
+    tcp_packet.set_window(t_params.window);
     let cksum = ipv4_checksum(&tcp_packet.to_immutable(), src_addr, dst_addr);
     tcp_packet.set_checksum(cksum);
     debug!("TCP packet: {:?}", tcp_packet);
@@ -129,6 +142,15 @@ impl TCP {
             seq_num: 0,
             next_seq: 0,
             conn_socks: Vec::new(),
+            window_sz: TCP_MAX_WINDOW_SZ,
+            s_window: vec![0u8; TCP_MAX_WINDOW_SZ],
+            r_window: vec![0u8; TCP_MAX_WINDOW_SZ],
+            snd_unackd: 0,
+            snd_nxt: 0,
+            snd_ackd: 0,
+            recv_nxt: 0,
+            recv_ackd: 0,
+            recv_rd: 0,
         };
         debug!("{:?} {:?} ", sock_id, tcb);
 
@@ -226,6 +248,7 @@ impl TCP {
                         seq_num: tcb.seq_num,
                         ack_num: 0,
                         flags: TcpFlags::SYN,
+			window: tcb.window_sz as u16be,
                     };
                     let mut pkt_buf = vec![0u8; 20];
                     let segment = build_tcp_packet(t_params, tcb.local_ip, dst_addr, &mut pkt_buf);
@@ -279,14 +302,18 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
                dl_ctx: &Arc<RwLock<DataLink>>,
                rip_ctx: &Arc<RwLock<RipCtx>>,
                socket: usize,
-               payload: String) -> Result<usize, String> {
-	let tcp = &mut *tcp_ctx.write().unwrap();
-	match tcp.tc_blocks.get_mut(&socket) {
-	Some(tcb) => {
-		Ok(0)
-	}
-	None => Err("Error: No connection setup!".to_owned())
-	}
+               payload: String)
+               -> Result<usize, String> {
+    let tcp = &mut *tcp_ctx.write().unwrap();
+    match tcp.tc_blocks.get_mut(&socket) {
+        Some(tcb) => {
+            let sz = payload.len();
+
+
+            Ok(sz)
+        }
+        None => Err("Error: No connection setup!".to_owned()),
+    }
 }
 pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                    rip_ctx: &Arc<RwLock<RipCtx>>,
@@ -299,6 +326,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
     // TODO verify checksum
     let seq_num = pkt.get_sequence();
     let flags = pkt.get_flags();
+    let window = pkt.get_window();
 
     let (lip, lp, dip, dp) =
         (ip_params.dst, pkt.get_destination(), ip_params.src, pkt.get_source());
@@ -319,6 +347,15 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
         seq_num: 0,
         next_seq: 0,
         conn_socks: Vec::new(),
+        window_sz: TCP_MAX_WINDOW_SZ,
+        s_window: vec![0u8; TCP_MAX_WINDOW_SZ],
+        r_window: vec![0u8; TCP_MAX_WINDOW_SZ],
+        snd_unackd: 0,
+        snd_nxt: 0,
+        snd_ackd: 0,
+        recv_nxt: 0,
+        recv_ackd: 0,
+        recv_rd: 0,
     };
 
     for (sock, tcb) in &mut tcp.tc_blocks {
@@ -332,6 +369,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                     seq_num: tcb.seq_num,
                     ack_num: tcb.next_seq,
                     flags: TcpFlags::ACK,
+		    window: tcb.window_sz as u16be,
                 };
                 let mut pkt_buf = vec![0u8; 20];
                 let segment = build_tcp_packet(t_params, lip, dip, &mut pkt_buf);
@@ -371,6 +409,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                 ntcb.state = STATUS::SynRcvd;
                 ntcb.seq_num = rand::random::<u32>();
                 ntcb.next_seq = seq_num + 1;
+		ntcb.window_sz = window;
 
                 parent_tcb_sock = *sock;
                 need_new_tcb = true;
@@ -383,6 +422,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                     seq_num: ntcb.seq_num,
                     ack_num: ntcb.next_seq,
                     flags: TcpFlags::SYN | TcpFlags::ACK,
+		    window: ntcb.window_sz as u16be,
                 };
                 let mut pkt_buf = vec![0u8; 20];
                 let segment = build_tcp_packet(t_params, lip, dip, &mut pkt_buf);
