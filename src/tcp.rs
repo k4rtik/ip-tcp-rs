@@ -5,8 +5,9 @@ use std::thread;
 use std::time::Duration;
 
 use pnet_macros_support::types::*;
-use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpPacket, TcpFlags};
+use pnet::packet::tcp::{Tcp, ipv4_checksum, MutableTcpPacket, TcpPacket, TcpFlags};
 use pnet::packet::Packet;
+use pnet::packet::FromPacket;
 use rand;
 
 use datalink::DataLink;
@@ -84,10 +85,10 @@ pub struct TcpParams {
 pub fn build_tcp_packet(t_params: TcpParams,
                         src_addr: Ipv4Addr,
                         dst_addr: Ipv4Addr,
-                        payload: &mut [u8])
-                        -> MutableTcpPacket {
+                        buff: &mut [u8])
+                         {
     info!("Building TCP packet...");
-    let mut tcp_packet = MutableTcpPacket::new(payload).unwrap();
+    let mut tcp_packet = MutableTcpPacket::new(buff).unwrap();
     tcp_packet.set_source(t_params.src_port);
     tcp_packet.set_destination(t_params.dst_port);
     tcp_packet.set_sequence(t_params.seq_num);
@@ -96,8 +97,7 @@ pub fn build_tcp_packet(t_params: TcpParams,
     tcp_packet.set_window(t_params.window);
     let cksum = ipv4_checksum(&tcp_packet.to_immutable(), src_addr, dst_addr);
     tcp_packet.set_checksum(cksum);
-    debug!("TCP packet: {:?}", tcp_packet);
-    tcp_packet
+    //debug!("TCP packet: {:?}", tcp_packet);
 }
 
 impl TCP {
@@ -248,7 +248,7 @@ impl TCP {
                         seq_num: tcb.seq_num,
                         ack_num: 0,
                         flags: TcpFlags::SYN,
-			window: tcb.window_sz as u16be,
+                        window: tcb.window_sz as u16be,
                     };
                     let mut pkt_buf = vec![0u8; 20];
                     let segment = build_tcp_packet(t_params, tcb.local_ip, dst_addr, &mut pkt_buf);
@@ -302,14 +302,49 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
                dl_ctx: &Arc<RwLock<DataLink>>,
                rip_ctx: &Arc<RwLock<RipCtx>>,
                socket: usize,
-               payload: String)
+               message: String)
                -> Result<usize, String> {
     let tcp = &mut *tcp_ctx.write().unwrap();
     match tcp.tc_blocks.get_mut(&socket) {
         Some(tcb) => {
-            let sz = payload.len();
-
-
+            let sz = message.len();
+            let t_params = TcpParams {
+                src_port: tcb.local_port,
+                dst_port: tcb.dst_port,
+                seq_num: tcb.seq_num,
+                ack_num: tcb.next_seq,
+                flags: TcpFlags::ACK,
+                window: tcb.window_sz as u16be,
+            };
+	    let mut temp = message.to_string();
+	    let mut payload = temp.into_bytes();
+	    println!("Message: {:?}", payload);
+	    let mut buff = vec![0u8; 20];
+	    buff.append(&mut payload);
+            build_tcp_packet(t_params,
+                                           tcb.local_ip,
+                                           tcb.dst_ip,
+                                           &mut buff);
+	    let mut segment = MutableTcpPacket::new(&mut buff).unwrap();
+	    segment.set_payload(&payload);
+	    println!("After: {:?}", segment);
+            let ip_params = ip::IpParams {
+                src: tcb.local_ip,
+                dst: tcb.dst_ip,
+                len: MutableTcpPacket::packet_size(&segment.from_packet()),
+                tos: 0,
+                opt: vec![],
+            };
+            ip::send(dl_ctx,
+                     Some(rip_ctx),
+                     None,
+                     ip_params,
+                     TCP_PROT,
+                     rip::INFINITY,
+                     segment.packet().to_vec(),
+                     0,
+                     true)
+                .unwrap();
             Ok(sz)
         }
         None => Err("Error: No connection setup!".to_owned()),
@@ -369,7 +404,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                     seq_num: tcb.seq_num,
                     ack_num: tcb.next_seq,
                     flags: TcpFlags::ACK,
-		    window: tcb.window_sz as u16be,
+                    window: tcb.window_sz as u16be,
                 };
                 let mut pkt_buf = vec![0u8; 20];
                 let segment = build_tcp_packet(t_params, lip, dip, &mut pkt_buf);
@@ -409,7 +444,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                 ntcb.state = STATUS::SynRcvd;
                 ntcb.seq_num = rand::random::<u32>();
                 ntcb.next_seq = seq_num + 1;
-		ntcb.window_sz = window;
+                ntcb.window_sz = window as usize;
 
                 parent_tcb_sock = *sock;
                 need_new_tcb = true;
@@ -422,7 +457,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                     seq_num: ntcb.seq_num,
                     ack_num: ntcb.next_seq,
                     flags: TcpFlags::SYN | TcpFlags::ACK,
-		    window: ntcb.window_sz as u16be,
+                    window: ntcb.window_sz as u16be,
                 };
                 let mut pkt_buf = vec![0u8; 20];
                 let segment = build_tcp_packet(t_params, lip, dip, &mut pkt_buf);
