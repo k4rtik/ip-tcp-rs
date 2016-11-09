@@ -26,7 +26,6 @@ pub struct Route {
 struct RouteEntry {
     dst: Ipv4Addr,
     next_hop: Ipv4Addr,
-    // interface: Interface, // which physical interface for this route
     metric: u8,
     timer: SystemTime, // since last updated
     route_src: Ipv4Addr, // gateway that provided this route
@@ -212,14 +211,16 @@ impl RipCtx {
                     trace!("BEFORE routing_table: {:?}", self.routing_table);
                     match self.routing_table.iter_mut().find(|rentry| rentry.dst == route.dst) {
                         Some(rentry) => {
-                            rentry.metric = if route.cost < rentry.metric ||
-                                               route.cost == INFINITY {
+                            rentry.metric = if route.cost < rentry.metric {
                                 rentry.route_changed = true;
+                                rentry.timer = SystemTime::now();
                                 route.cost
+                            } else if route.cost == INFINITY {
+                                rentry.metric
                             } else {
+                                rentry.timer = SystemTime::now();
                                 rentry.metric
                             };
-                            rentry.timer = SystemTime::now();
                             trace!("rentry: {:?}", rentry);
                         }
                         None => {
@@ -264,7 +265,11 @@ impl RipCtx {
                         cost: rentry.metric,
                     })
                 } else {
-                    None
+                    Some(Route {
+                        dst: rentry.dst,
+                        src: rentry.next_hop,
+                        cost: INFINITY,
+                    })
                 }
             })
             .collect()
@@ -310,21 +315,18 @@ fn build_rip_pkt(rip_ctx: &Arc<RwLock<RipCtx>>,
 
     let mut idx = 4;
     let mut entry_id = 0;
-    let entries = &(*rip_ctx.read().unwrap()).get_routes(route_src);
-    debug!("Entries going into RIP packet: {:?}", entries);
-    let num_entries = if entries.len() < num_entries {
-        entries.len()
-    } else {
-        num_entries
-    };
     {
         let mut rip_pkt = MutableRipPacket::new(packet).unwrap();
         rip_pkt.set_num_entries(num_entries as u16);
     }
-    while entry_id < num_entries {
-        build_rip_entry_pkt(&entries[entry_id], &mut packet[idx..]);
-        entry_id += 1;
-        idx += 8;
+    if num_entries > 0 {
+        let entries = &(*rip_ctx.read().unwrap()).get_routes(route_src);
+        while entry_id < num_entries {
+            trace!("Entry going into RIP packet: {:?}", entries[entry_id]);
+            build_rip_entry_pkt(&entries[entry_id], &mut packet[idx..]);
+            entry_id += 1;
+            idx += 8;
+        }
     }
 
     idx
@@ -372,7 +374,7 @@ pub fn start_rip_module(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<Rip
             tos: 0,
             opt: vec![],
         };
-        debug!("SENDING RIP REQUEST: {:?}", rip_pkt);
+        trace!("SENDING RIP REQUEST: {:?}", rip_pkt);
         let res = ip::send(dl_ctx,
                            None,
                            None,
