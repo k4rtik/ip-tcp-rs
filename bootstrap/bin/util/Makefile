@@ -1,12 +1,12 @@
 NET_PATH = ../../nets/ABC.net
 
 all:
-	cp ../../../target/release/node .
+	cp ../../../target/debug/node .
 	./net2lnx $(NET_PATH)
 	./runNetwork $(NET_PATH)
 
 ref:
-	cp ../tcp_node_ip_dbg node
+	cp ../tcp_node node
 	./net2lnx $(NET_PATH)
 	./runNetwork $(NET_PATH)
 
