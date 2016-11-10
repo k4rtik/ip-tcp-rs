@@ -5,7 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 use pnet_macros_support::types::*;
-use pnet::packet::tcp::{Tcp, ipv4_checksum, MutableTcpPacket, TcpPacket, TcpFlags};
+use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpPacket, TcpFlags};
 use pnet::packet::Packet;
 use pnet::packet::FromPacket;
 use rand;

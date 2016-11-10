@@ -20,7 +20,6 @@ use rustyline::Editor;
 use std::fs::File;
 use std::io::{BufReader, BufRead};
 use std::net::Ipv4Addr;
-use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 use std::thread;
 
@@ -55,16 +54,6 @@ fn parse_lnx(filename: &str) -> RouteInfo {
     RouteInfo {
         socket_addr: socket_addr,
         interfaces: interfaces,
-    }
-}
-
-fn is_ip(ip_addr: &str) -> bool {
-    match Ipv4Addr::from_str(ip_addr) {
-        Ok(_) => true,
-        Err(_) => {
-            trace!("{:?}", ip_addr);
-            false
-        }
     }
 }
 
@@ -157,9 +146,12 @@ pub fn connect_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
 
 pub fn send_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
                 dl_ctx: &Arc<RwLock<DataLink>>,
-                rip_ctx: &Arc<RwLock<RipCtx>>, socket: usize, message: String) {
-	info!("Writing...");
-	let bytes = tcp::v_write(tcp_ctx, dl_ctx, rip_ctx, socket, message);
+                rip_ctx: &Arc<RwLock<RipCtx>>,
+                socket: usize,
+                message: String) {
+    info!("Writing...");
+    let bytes = tcp::v_write(tcp_ctx, dl_ctx, rip_ctx, socket, message.as_bytes());
+    debug!("bytes written: {:?}", bytes);
 }
 
 #[allow(unknown_lints)]
@@ -275,7 +267,7 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                             let socket = cmd_vec[1].parse::<usize>().unwrap();
                             let string = cmd_vec[2];
                             let message = string.to_string();
-                            let ret = send_cmd(&tcp_ctx, &dl_ctx, &rip_ctx, socket, message);
+                            send_cmd(&tcp_ctx, &dl_ctx, &rip_ctx, socket, message);
                         }
                     }
                     "recv" | "r" => {
