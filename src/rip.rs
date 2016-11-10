@@ -374,7 +374,7 @@ pub fn start_rip_module(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<Rip
             tos: 0,
             opt: vec![],
         };
-        debug!("SENDING RIP REQUEST: {:?}", rip_pkt);
+        trace!("SENDING RIP REQUEST: {:?}", rip_pkt);
         let res = ip::send(dl_ctx,
                            None,
                            None,
