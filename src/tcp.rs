@@ -15,6 +15,7 @@ use ip;
 use rip::{self, RipCtx};
 
 const TCP_PROT: u8 = 6;
+const MSS: usize = 1480; // 1500 (MTU) - IPV4_HEADER_LEN
 const TCP_MAX_WINDOW_SZ: usize = 65536;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -54,15 +55,15 @@ struct TCB {
     next_seq: u32,
     conn_socks: Vec<usize>,
 
-    window_sz: usize,
+    window_sz: u16,
     s_window: Vec<u8>,
     r_window: Vec<u8>,
-    snd_unackd: usize,
-    snd_nxt: usize,
-    snd_ackd: usize,
-    recv_nxt: usize,
-    recv_ackd: usize,
-    recv_rd: usize,
+    snd_unackd: u32,
+    snd_nxt: u32,
+    snd_ackd: u32,
+    recv_nxt: u32,
+    recv_ackd: u32,
+    recv_rd: u32,
 }
 
 #[derive(Default)]
@@ -82,27 +83,30 @@ pub struct TcpParams {
     window: u16be,
 }
 
-pub fn build_tcp_packet(t_params: TcpParams,
+pub fn build_tcp_header(t_params: TcpParams,
                         src_addr: Ipv4Addr,
                         dst_addr: Ipv4Addr,
-                        buff: &mut [u8])
-                         {
+                        payload: Option<&[u8]>,
+                        buff: &mut [u8]) {
     info!("Building TCP packet...");
     let mut tcp_packet = MutableTcpPacket::new(buff).unwrap();
     tcp_packet.set_source(t_params.src_port);
     tcp_packet.set_destination(t_params.dst_port);
     tcp_packet.set_sequence(t_params.seq_num);
     tcp_packet.set_acknowledgement(t_params.ack_num);
+    tcp_packet.set_data_offset((TcpPacket::minimum_packet_size() / 4) as u4); // number of 32-bit words in header
     tcp_packet.set_flags(t_params.flags);
     tcp_packet.set_window(t_params.window);
+    if let Some(payload) = payload {
+        tcp_packet.set_payload(payload)
+    }
     let cksum = ipv4_checksum(&tcp_packet.to_immutable(), src_addr, dst_addr);
     tcp_packet.set_checksum(cksum);
-    //debug!("TCP packet: {:?}", tcp_packet);
 }
 
 impl TCP {
     pub fn new() -> TCP {
-        debug!("Starting TCP...");
+        info!("Starting TCP...");
         TCP {
             tc_blocks: HashMap::new(),
             free_sockets: Vec::new(),
@@ -142,7 +146,7 @@ impl TCP {
             seq_num: 0,
             next_seq: 0,
             conn_socks: Vec::new(),
-            window_sz: TCP_MAX_WINDOW_SZ,
+            window_sz: TCP_MAX_WINDOW_SZ as u16,
             s_window: vec![0u8; TCP_MAX_WINDOW_SZ],
             r_window: vec![0u8; TCP_MAX_WINDOW_SZ],
             snd_unackd: 0,
@@ -152,7 +156,6 @@ impl TCP {
             recv_ackd: 0,
             recv_rd: 0,
         };
-        debug!("{:?} {:?} ", sock_id, tcb);
 
         match self.tc_blocks.insert(sock_id, tcb) {
             Some(v) => {
@@ -251,7 +254,8 @@ impl TCP {
                         window: tcb.window_sz as u16be,
                     };
                     let mut pkt_buf = vec![0u8; 20];
-                    let segment = build_tcp_packet(t_params, tcb.local_ip, dst_addr, &mut pkt_buf);
+                    build_tcp_header(t_params, tcb.local_ip, dst_addr, None, &mut pkt_buf);
+                    let segment = TcpPacket::new(&pkt_buf).unwrap();
                     let pkt_sz = MutableTcpPacket::minimum_packet_size();
                     let ip_params = ip::IpParams {
                         src: Ipv4Addr::new(127, 0, 0, 1),
@@ -302,7 +306,7 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
                dl_ctx: &Arc<RwLock<DataLink>>,
                rip_ctx: &Arc<RwLock<RipCtx>>,
                socket: usize,
-               message: String)
+               message: &[u8])
                -> Result<usize, String> {
     let tcp = &mut *tcp_ctx.write().unwrap();
     match tcp.tc_blocks.get_mut(&socket) {
@@ -316,22 +320,15 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
                 flags: TcpFlags::ACK,
                 window: tcb.window_sz as u16be,
             };
-	    let mut temp = message.to_string();
-	    let mut payload = temp.into_bytes();
-	    println!("Message: {:?}", payload);
-	    let mut buff = vec![0u8; 20];
-	    buff.append(&mut payload);
-            build_tcp_packet(t_params,
-                                           tcb.local_ip,
-                                           tcb.dst_ip,
-                                           &mut buff);
-	    let mut segment = MutableTcpPacket::new(&mut buff).unwrap();
-	    segment.set_payload(&payload);
-	    println!("After: {:?}", segment);
+            let mut buff = vec![0u8; TcpPacket::minimum_packet_size() + message.len()];
+            build_tcp_header(t_params, tcb.local_ip, tcb.dst_ip, Some(message), &mut buff);
+            let segment = MutableTcpPacket::new(&mut buff).unwrap();
+            debug!("payload: {:?}", segment.payload());
+            let pkt_sz = MutableTcpPacket::packet_size(&segment.from_packet());
             let ip_params = ip::IpParams {
                 src: tcb.local_ip,
                 dst: tcb.dst_ip,
-                len: MutableTcpPacket::packet_size(&segment.from_packet()),
+                len: pkt_sz,
                 tos: 0,
                 opt: vec![],
             };
@@ -359,7 +356,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
     debug!("{:?}", pkt);
 
     // TODO verify checksum
-    let seq_num = pkt.get_sequence();
+    let other_seq_num = pkt.get_sequence();
     let flags = pkt.get_flags();
     let window = pkt.get_window();
 
@@ -382,7 +379,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
         seq_num: 0,
         next_seq: 0,
         conn_socks: Vec::new(),
-        window_sz: TCP_MAX_WINDOW_SZ,
+        window_sz: TCP_MAX_WINDOW_SZ as u16,
         s_window: vec![0u8; TCP_MAX_WINDOW_SZ],
         r_window: vec![0u8; TCP_MAX_WINDOW_SZ],
         snd_unackd: 0,
@@ -397,18 +394,21 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
         // regular socket
         if tcb.local_ip == lip && tcb.local_port == lp && tcb.dst_ip == dip && tcb.dst_port == dp {
             if tcb.state == STATUS::SynSent {
-                tcb.next_seq = seq_num + 1;
+                tcb.next_seq = other_seq_num + 1; // next expected seq / ack
+                tcb.snd_unackd = tcb.seq_num + 1;
+                tcb.window_sz = window;
                 let t_params = TcpParams {
                     src_port: tcb.local_port,
                     dst_port: tcb.dst_port,
-                    seq_num: tcb.seq_num,
+                    seq_num: tcb.snd_unackd,
                     ack_num: tcb.next_seq,
                     flags: TcpFlags::ACK,
-                    window: tcb.window_sz as u16be,
+                    window: window,
                 };
-                let mut pkt_buf = vec![0u8; 20];
-                let segment = build_tcp_packet(t_params, lip, dip, &mut pkt_buf);
                 let pkt_sz = MutableTcpPacket::minimum_packet_size();
+                let mut pkt_buf = vec![0u8; pkt_sz];
+                build_tcp_header(t_params, lip, dip, None, &mut pkt_buf);
+                let segment = TcpPacket::new(&pkt_buf[..]).unwrap();
                 let ip_params = ip::IpParams {
                     src: lip,
                     dst: dip,
@@ -427,6 +427,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                          true)
                     .unwrap();
                 tcb.state = STATUS::Estab;
+                tcb.seq_num = tcb.snd_unackd;
             } else {
                 warn!("TCB not in SYN_SENT state: {:?}", tcb);
             }
@@ -443,8 +444,8 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                 ntcb.dst_port = dp;
                 ntcb.state = STATUS::SynRcvd;
                 ntcb.seq_num = rand::random::<u32>();
-                ntcb.next_seq = seq_num + 1;
-                ntcb.window_sz = window as usize;
+                ntcb.next_seq = other_seq_num + 1;
+                ntcb.window_sz = window;
 
                 parent_tcb_sock = *sock;
                 need_new_tcb = true;
@@ -459,9 +460,10 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                     flags: TcpFlags::SYN | TcpFlags::ACK,
                     window: ntcb.window_sz as u16be,
                 };
-                let mut pkt_buf = vec![0u8; 20];
-                let segment = build_tcp_packet(t_params, lip, dip, &mut pkt_buf);
                 let pkt_sz = MutableTcpPacket::minimum_packet_size();
+                let mut pkt_buf = vec![0u8; pkt_sz];
+                build_tcp_header(t_params, lip, dip, None, &mut pkt_buf);
+                let segment = TcpPacket::new(&pkt_buf[..]).unwrap();
                 let ip_params = ip::IpParams {
                     src: lip,
                     dst: dip,
