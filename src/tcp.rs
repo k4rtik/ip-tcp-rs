@@ -316,16 +316,15 @@ pub fn v_accept(tcp_ctx: &Arc<RwLock<TCP>>,
 }
 
 
-pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: bool) {
+pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: bool) -> usize {
     let tcp = &mut *tcp_ctx.write().unwrap();
     match tcp.tc_blocks.get_mut(&socket) {
         Some(tcb) => {
-            let mut buff = vec![0u8; 0];
-            for i in 0..size {
-                debug!("Data received: {:?}", tcb.rcv_buffer[i]);
-            }
+            println!("payload: {}",
+                     String::from_utf8_lossy(&tcb.rcv_buffer[..size]));
+            size
         }
-        None => {}
+        None => 0,
     }
 }
 pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
@@ -388,7 +387,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
     let pkt_seq_num = pkt.get_sequence();
     let pkt_ack = pkt.get_acknowledgement();
     let pkt_flags = pkt.get_flags();
-    // let pkt_window = pkt.get_window();
+    let pkt_window = pkt.get_window();
 
     let (lip, lp, dip, dp) =
         (ip_params.dst, pkt.get_destination(), ip_params.src, pkt.get_source());
@@ -401,12 +400,10 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
         // regular socket
         if tcb.local_ip == lip && tcb.local_port == lp && tcb.remote_ip == dip &&
            tcb.remote_port == dp {
-            if tcb.state == STATUS::Estab {
-                if tcb.rcv_nxt == pkt_seq_num {
-                    tcb.rcv_buffer.append(&mut pkt.payload().to_vec());
-                    tcb.rcv_nxt = pkt_seq_num + (pkt.payload().len() as u32);
-                    // Send ack!
-                }
+            if tcb.state == STATUS::Closed {
+                info!("packet recd on Closed TCB");
+            } else if tcb.state == STATUS::Listen {
+                info!("packet recd on TCB in Listen State");
             } else if tcb.state == STATUS::SynSent {
                 // TODO check for ACK bit and verify it is in snd window
                 // this is SYN+ACK for now
@@ -448,7 +445,97 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                 // tcb.snd_wnd = pkt_window;
                 // tcb.seq_num = tcb.snd_unackd;
             } else {
-                warn!("TCB in invalid state: {:?}", tcb);
+                // otherwise, pg. 69 in RFC 793
+                // TODO discard old dups
+                let seg_len = pkt.payload().len() as u32;
+                if tcb.rcv_wnd == 0 {
+                    if seg_len > 0 {
+                        // TODO send ACK
+                        warn!("Dropping packet, cannot accept with 0 window");
+                    } else if seg_len == 0 && pkt_seq_num == tcb.rcv_nxt {
+                        info!("received packet is probably ACK");
+                    } else {
+                        // TODO send ACK
+                        warn!("Dropping packet, looks invalid");
+                    }
+                } else if tcb.rcv_wnd > 0 {
+                    if seg_len == 0 && tcb.rcv_nxt <= pkt_seq_num &&
+                       pkt_seq_num < tcb.rcv_nxt + tcb.rcv_wnd as u32 {
+                        info!("received packet is probably ACK");
+                    } else if seg_len > 0 &&
+                              (tcb.rcv_nxt <= pkt_seq_num &&
+                               pkt_seq_num < tcb.rcv_nxt + tcb.rcv_wnd as u32 ||
+                               tcb.rcv_nxt <= pkt_seq_num + seg_len - 1 &&
+                               pkt_seq_num + seg_len - 1 < tcb.rcv_nxt + tcb.rcv_wnd as u32) {
+                        if tcb.rcv_nxt == pkt_seq_num {
+                            // ideal case
+                            if pkt_flags != TcpFlags::ACK {
+                                warn!("Dropping packet, no ACK flag set");
+                                return;
+                            }
+
+                            if tcb.snd_una < pkt_ack && pkt_ack <= tcb.snd_nxt {
+                                tcb.snd_una = pkt_ack;
+                                // TODO discard old segments from retransmit_q and inform user of
+                                // v_write of success
+
+                                // update send window
+                                if tcb.snd_wl1 < pkt_ack ||
+                                   (tcb.snd_wl1 == pkt_ack && tcb.snd_wl2 <= pkt_ack) {
+                                    tcb.snd_wnd = pkt_window;
+                                    tcb.snd_wl1 = pkt_seq_num;
+                                    tcb.snd_wl2 = pkt_ack;
+                                }
+                            } else if pkt_ack < tcb.snd_una {
+                                info!("ignoring duplicate");
+                            } else if pkt_ack > tcb.snd_nxt {
+                                // TODO send ACK
+                                warn!("Dropping packet, received too early");
+                            }
+
+                            // payload processing
+                            tcb.rcv_nxt = pkt_seq_num + (pkt.payload().len() as u32);
+                            // TODO put the received segment in the right place in the buffer
+                            tcb.rcv_buffer.append(&mut pkt.payload().to_vec());
+
+                            // Send ACK
+                            let t_params = TcpParams {
+                                src_port: tcb.local_port,
+                                dst_port: tcb.remote_port,
+                                seq_num: tcb.snd_nxt,
+                                ack_num: tcb.rcv_nxt,
+                                flags: TcpFlags::ACK,
+                                window: tcb.rcv_wnd,
+                            };
+                            let pkt_sz = MutableTcpPacket::minimum_packet_size();
+                            let mut pkt_buf = vec![0u8; pkt_sz];
+                            build_tcp_header(t_params, lip, dip, None, &mut pkt_buf);
+                            let segment = TcpPacket::new(&pkt_buf[..]).unwrap();
+                            let ip_params = ip::IpParams {
+                                src: lip,
+                                dst: dip,
+                                len: pkt_sz,
+                                tos: 0,
+                                opt: vec![],
+                            };
+                            ip::send(dl_ctx,
+                                     Some(rip_ctx),
+                                     None,
+                                     ip_params,
+                                     TCP_PROT,
+                                     rip::INFINITY,
+                                     segment.packet().to_vec(),
+                                     0,
+                                     true)
+                                .unwrap();
+                        } else {
+                            // non-ideal case
+                        }
+                    } else {
+                        // TODO send ACK
+                        warn!("Dropping packet, unacceptable!");
+                    }
+                }
             }
             break;
         }
