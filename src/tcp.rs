@@ -4,6 +4,7 @@ use std::sync::{Arc, RwLock};
 use std::net::Ipv4Addr;
 use std::thread;
 use std::time::Duration;
+use std::str;
 
 use pnet_macros_support::types::*;
 use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpPacket, TcpFlags};
@@ -315,6 +316,19 @@ pub fn v_accept(tcp_ctx: &Arc<RwLock<TCP>>,
     Ok(0)
 }
 
+
+pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: bool) {
+    let tcp = &mut *tcp_ctx.write().unwrap();
+    match tcp.tc_blocks.get_mut(&socket) {
+        Some(tcb) => {
+            let mut buff = vec![0u8; 0];
+            for i in 0..size {
+                debug!("Data received: {:?}", tcb.rcv_buffer[i]);
+            }
+        }
+        None => {}
+    }
+}
 pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
                dl_ctx: &Arc<RwLock<DataLink>>,
                rip_ctx: &Arc<RwLock<RipCtx>>,
@@ -388,7 +402,13 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
         // regular socket
         if tcb.local_ip == lip && tcb.local_port == lp && tcb.remote_ip == dip &&
            tcb.remote_port == dp {
-            if tcb.state == STATUS::SynSent {
+            if tcb.state == STATUS::Estab {
+                if tcb.rcv_nxt == pkt_seq_num {
+                    tcb.rcv_buffer.append(&mut pkt.payload().to_vec());
+                    tcb.rcv_nxt = pkt_seq_num + (pkt.payload().len() as u32);
+                    // Send ack!
+                }
+            } else if tcb.state == STATUS::SynSent {
                 // TODO check for ACK bit and verify it is in snd window
                 // this is SYN+ACK for now
                 tcb.rcv_nxt = pkt_seq_num + 1;
