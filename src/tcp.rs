@@ -332,53 +332,62 @@ pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: boo
         None => 0,
     }
 }
+
 pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
                dl_ctx: &Arc<RwLock<DataLink>>,
                rip_ctx: &Arc<RwLock<RipCtx>>,
                socket: usize,
                message: &[u8])
                -> Result<usize, String> {
-    let tcp = &mut *tcp_ctx.write().unwrap();
-    match tcp.tc_blocks.get_mut(&socket) {
-        Some(tcb) => {
-            let sz = message.len();
-            let t_params = TcpParams {
-                src_port: tcb.local_port,
-                dst_port: tcb.remote_port,
-                seq_num: tcb.snd_nxt,
-                ack_num: tcb.rcv_nxt,
-                flags: TcpFlags::ACK,
-                window: tcb.rcv_wnd,
-            };
-            let mut buff = vec![0u8; TcpPacket::minimum_packet_size() + message.len()];
-            build_tcp_header(t_params,
-                             tcb.local_ip,
-                             tcb.remote_ip,
-                             Some(message),
-                             &mut buff);
-            let segment = MutableTcpPacket::new(&mut buff).unwrap();
-            let pkt_sz = MutableTcpPacket::packet_size(&segment.from_packet());
-            let ip_params = ip::IpParams {
-                src: tcb.local_ip,
-                dst: tcb.remote_ip,
-                len: pkt_sz,
-                tos: 0,
-                opt: vec![],
-            };
-            ip::send(dl_ctx,
-                     Some(rip_ctx),
-                     None,
-                     ip_params,
-                     TCP_PROT,
-                     rip::INFINITY,
-                     segment.packet().to_vec(),
-                     0,
-                     true)
-                .unwrap();
-            Ok(sz)
+    let t_params: TcpParams;
+    let mut pkt_buf: Vec<u8>;
+    let segment: MutableTcpPacket;
+    let ip_params: ip::IpParams;
+
+    {
+        let tcp = &mut *tcp_ctx.write().unwrap();
+        match tcp.tc_blocks.get_mut(&socket) {
+            Some(tcb) => {
+                t_params = TcpParams {
+                    src_port: tcb.local_port,
+                    dst_port: tcb.remote_port,
+                    seq_num: tcb.snd_nxt,
+                    ack_num: tcb.rcv_nxt,
+                    flags: TcpFlags::ACK,
+                    window: tcb.rcv_wnd,
+                };
+                pkt_buf = vec![0u8; TcpPacket::minimum_packet_size() + message.len()];
+                build_tcp_header(t_params,
+                                 tcb.local_ip,
+                                 tcb.remote_ip,
+                                 Some(message),
+                                 &mut pkt_buf);
+                segment = MutableTcpPacket::new(&mut pkt_buf).unwrap();
+                let pkt_sz = MutableTcpPacket::packet_size(&segment.from_packet());
+                ip_params = ip::IpParams {
+                    src: tcb.local_ip,
+                    dst: tcb.remote_ip,
+                    len: pkt_sz,
+                    tos: 0,
+                    opt: vec![],
+                };
+            }
+            None => {
+                return Err("Error: No connection setup!".to_owned());
+            }
         }
-        None => Err("Error: No connection setup!".to_owned()),
     }
+    ip::send(dl_ctx,
+             Some(rip_ctx),
+             Some(tcp_ctx),
+             ip_params,
+             TCP_PROT,
+             rip::INFINITY,
+             segment.packet().to_vec(),
+             0,
+             true)
+        .unwrap();
+    Ok(message.len())
 }
 
 pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
