@@ -242,68 +242,74 @@ impl TCP {
             None => Err("No TCB associated with this connection!".to_owned()),
         }
     }
+}
 
-    pub fn v_connect(&mut self,
-                     dl_ctx: &Arc<RwLock<DataLink>>,
-                     rip_ctx: &Arc<RwLock<RipCtx>>,
-                     socket: usize,
-                     dst_addr: Ipv4Addr,
-                     port: u16)
-                     -> Result<(), String> {
-        let unused_port = self.get_unused_ip_port(dl_ctx).unwrap().1;
-        match self.tc_blocks.get_mut(&socket) {
-            Some(tcb) => {
-                if tcb.state == STATUS::Closed {
-                    tcb.local_ip = (*rip_ctx.read().unwrap()).get_next_hop(dst_addr).unwrap();
-                    tcb.local_port = unused_port;
-                    tcb.remote_ip = dst_addr;
-                    tcb.remote_port = port;
-                    self.bound_ports.insert((tcb.local_ip, tcb.local_port));
+pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
+                 dl_ctx: &Arc<RwLock<DataLink>>,
+                 rip_ctx: &Arc<RwLock<RipCtx>>,
+                 socket: usize,
+                 dst_addr: Ipv4Addr,
+                 port: u16)
+                 -> Result<(), String> {
+    let unused_port = (*tcp_ctx.read().unwrap()).get_unused_ip_port(dl_ctx).unwrap().1;
+    let local_ip = (*rip_ctx.read().unwrap()).get_next_hop(dst_addr).unwrap();
 
-                    // send SYN
-                    let t_params = TcpParams {
-                        src_port: tcb.local_port,
-                        dst_port: tcb.remote_port,
-                        seq_num: tcb.iss,
-                        ack_num: 0,
-                        flags: TcpFlags::SYN,
-                        window: tcb.rcv_wnd,
-                    };
-                    let mut pkt_buf = vec![0u8; 20];
-                    build_tcp_header(t_params, tcb.local_ip, dst_addr, None, &mut pkt_buf);
-                    let segment = TcpPacket::new(&pkt_buf).unwrap();
-                    let pkt_sz = MutableTcpPacket::minimum_packet_size();
-                    let ip_params = ip::IpParams {
-                        src: Ipv4Addr::new(127, 0, 0, 1),
-                        dst: dst_addr,
-                        len: pkt_sz,
-                        tos: 0,
-                        opt: vec![],
-                    };
-                    ip::send(dl_ctx,
-                             Some(rip_ctx),
-                             None,
-                             ip_params,
-                             TCP_PROT,
-                             rip::INFINITY,
-                             segment.packet().to_vec(),
-                             0,
-                             true)
-                        .unwrap();
+    let t_params: TcpParams;
+    let ip_params: ip::IpParams;
+    let mut pkt_buf = vec![0u8; 20];
+    if let Some(tcb) = (*tcp_ctx.write().unwrap()).tc_blocks.get_mut(&socket) {
+        if tcb.state == STATUS::Closed {
+            tcb.local_ip = local_ip;
+            tcb.local_port = unused_port;
+            tcb.remote_ip = dst_addr;
+            tcb.remote_port = port;
 
-                    // TODO put in retransmit_q?
+            t_params = TcpParams {
+                src_port: tcb.local_port,
+                dst_port: tcb.remote_port,
+                seq_num: tcb.iss,
+                ack_num: 0,
+                flags: TcpFlags::SYN,
+                window: tcb.rcv_wnd,
+            };
 
-                    tcb.snd_una = tcb.iss;
-                    tcb.snd_nxt = tcb.iss + 1;
-                    tcb.state = STATUS::SynSent;
-                    Ok(())
-                } else {
-                    Err(format!("EISCONN/EALREADY: TCB not in CLOSED state: {:?}", tcb))
-                }
-            }
-            None => Err("ENOTSOCK: No TCB associated with this connection!".to_owned()),
+            build_tcp_header(t_params, tcb.local_ip, dst_addr, None, &mut pkt_buf);
+            let pkt_sz = MutableTcpPacket::minimum_packet_size();
+            ip_params = ip::IpParams {
+                src: local_ip,
+                dst: dst_addr,
+                len: pkt_sz,
+                tos: 0,
+                opt: vec![],
+            };
+
+            tcb.snd_una = tcb.iss;
+            tcb.snd_nxt = tcb.iss + 1;
+            tcb.state = STATUS::SynSent;
+        } else {
+            return Err(format!("EISCONN/EALREADY: TCB not in CLOSED state: {:?}", tcb));
         }
+    } else {
+        return Err("ENOTSOCK: No TCB associated with this connection!".to_owned());
     }
+
+    (*tcp_ctx.write().unwrap()).bound_ports.insert((local_ip, unused_port));
+    // send SYN
+    let segment = TcpPacket::new(&pkt_buf).unwrap();
+    ip::send(dl_ctx,
+             Some(rip_ctx),
+             Some(tcp_ctx),
+             ip_params,
+             TCP_PROT,
+             rip::INFINITY,
+             segment.packet().to_vec(),
+             0,
+             true)
+        .unwrap();
+
+    // TODO put in retransmit_q?
+
+    Ok(())
 }
 
 #[allow(unused_variables)]

@@ -135,7 +135,7 @@ pub fn connect_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
     let s = (*tcp_ctx.write().unwrap()).v_socket();
     match s {
         Ok(sock) => {
-            match (*tcp_ctx.write().unwrap()).v_connect(dl_ctx, rip_ctx, sock, addr, port) {
+            match tcp::v_connect(tcp_ctx, dl_ctx, rip_ctx, sock, addr, port) {
                 Ok(_) => info!("Successfully connected to {}:{}", addr, port),
                 Err(e) => error!("v_connect() failed: {}", e),
             }
