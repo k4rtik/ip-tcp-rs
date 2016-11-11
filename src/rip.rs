@@ -225,7 +225,7 @@ impl RipCtx {
                         }
                         None => {
                             if route.cost < INFINITY {
-                                info!("Adding new rentry");
+                                trace!("Adding new rentry");
                                 need_to_add = true;
                             }
                         }
@@ -385,7 +385,7 @@ pub fn start_rip_module(dl_ctx: &Arc<RwLock<DataLink>>, rip_ctx: &Arc<RwLock<Rip
                            0,
                            true);
         match res {
-            Ok(_) => info!("RIP request sent succesfully on {:?}", iface.dst),
+            Ok(_) => trace!("RIP request sent succesfully on {:?}", iface.dst),
             Err(str) => warn!("{}", str),
         }
     }

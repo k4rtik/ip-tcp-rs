@@ -93,7 +93,6 @@ fn print_sockets(sockets: Vec<Socket>) {
 }
 
 pub fn accept_cmd(tcp_ctx: &Arc<RwLock<TCP>>, dl_ctx: &Arc<RwLock<DataLink>>, port: u16) {
-    info!("Creating socket...");
     let s = (*tcp_ctx.write().unwrap()).v_socket();
     // TODO think if this scoping is necessary to prevent deadlock?
     {
@@ -131,12 +130,11 @@ pub fn connect_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
                    rip_ctx: &Arc<RwLock<RipCtx>>,
                    addr: Ipv4Addr,
                    port: u16) {
-    info!("Connecting...");
     let s = (*tcp_ctx.write().unwrap()).v_socket();
     match s {
         Ok(sock) => {
             match tcp::v_connect(tcp_ctx, dl_ctx, rip_ctx, sock, addr, port) {
-                Ok(_) => info!("Successfully connected to {}:{}", addr, port),
+                Ok(_) => info!("v_connect() put new TCB in SynSent state"),
                 Err(e) => error!("v_connect() failed: {}", e),
             }
         }

@@ -126,7 +126,7 @@ pub fn build_tcp_header(t_params: TcpParams,
                         dst_addr: Ipv4Addr,
                         payload: Option<&[u8]>,
                         buff: &mut [u8]) {
-    info!("Building TCP packet...");
+    trace!("Building TCP packet...");
     let mut tcp_packet = MutableTcpPacket::new(buff).unwrap();
     tcp_packet.set_source(t_params.src_port);
     tcp_packet.set_destination(t_params.dst_port);
@@ -169,7 +169,7 @@ impl TCP {
     }
 
     pub fn v_socket(&mut self) -> Result<usize, String> {
-        info!("Creating socket...");
+        trace!("Creating socket...");
         let sock_id = match self.free_sockets.pop() {
             Some(socket) => socket,
             None => self.tc_blocks.len(),
@@ -439,6 +439,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                     tcb.snd_una = pkt_ack;
                     if tcb.snd_una > tcb.iss {
                         tcb.state = STATUS::Estab;
+                        println!("v_connect() returned 0");
                         t_params = TcpParams {
                             src_port: tcb.local_port,
                             dst_port: tcb.remote_port,
