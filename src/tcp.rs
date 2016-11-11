@@ -17,7 +17,6 @@ use ip;
 use rip::{self, RipCtx};
 
 const TCP_PROT: u8 = 6;
-const MSS: usize = 1480; // 1500 (MTU) - IPV4_HEADER_LEN
 const TCP_MAX_WINDOW_SZ: usize = 65535;
 
 #[derive(Clone, Debug, PartialEq)]

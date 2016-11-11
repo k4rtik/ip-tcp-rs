@@ -154,11 +154,7 @@ pub fn send_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
     debug!("bytes written: {:?}", bytes);
 }
 
-pub fn recv_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
-                dl_ctx: &Arc<RwLock<DataLink>>,
-                rip_ctx: &Arc<RwLock<RipCtx>>,
-                socket: usize,
-                size: usize) {
+pub fn recv_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) {
     info!("Receiving...");
     let bytes = tcp::v_read(tcp_ctx, socket, size, false);
     debug!("bytes written: {:?}", bytes);
@@ -286,7 +282,7 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                         } else {
                             let socket = cmd_vec[1].parse::<usize>().unwrap();
                             let size = cmd_vec[2].parse::<usize>().unwrap();
-                            recv_cmd(&tcp_ctx, &dl_ctx, &rip_ctx, socket, size);
+                            recv_cmd(&tcp_ctx, socket, size);
                         }
                     }
                     "sendfile" | "sf" => {
