@@ -315,7 +315,6 @@ pub fn v_accept(tcp_ctx: &Arc<RwLock<TCP>>,
     Ok(0)
 }
 
-
 pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: bool) -> usize {
     let tcp = &mut *tcp_ctx.write().unwrap();
     match tcp.tc_blocks.get_mut(&socket) {

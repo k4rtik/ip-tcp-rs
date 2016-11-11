@@ -98,7 +98,7 @@ pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
                         let pkt = MutableIpv4Packet::new(&mut pkt_buf).unwrap();
                         (*dl_ctx.read().unwrap()).send_packet(params.src, pkt.to_immutable())
                     }
-                    None => Err("Destination unreachable!".to_string()),
+                    None => Err(format!("Destination {:?} unreachable!", params.dst)),
                 }
             }
         }
