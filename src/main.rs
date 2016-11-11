@@ -147,7 +147,6 @@ pub fn send_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
                 rip_ctx: &Arc<RwLock<RipCtx>>,
                 socket: usize,
                 message: String) {
-    info!("Writing...");
     let bytes = tcp::v_write(tcp_ctx, dl_ctx, rip_ctx, socket, message.as_bytes());
     debug!("bytes written: {:?}", bytes);
 }
