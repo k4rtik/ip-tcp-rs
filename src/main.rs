@@ -193,7 +193,8 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                         print_routes(routes);
                     }
                     "sockets" | "ls" => {
-                        let sockets = (*tcp_ctx.read().unwrap()).get_sockets();
+                        let mut sockets = (*tcp_ctx.read().unwrap()).get_sockets();
+                        sockets.sort_by_key(|s| s.socket_id);
                         print_sockets(sockets);
                     }
                     "accept" | "a" => {
