@@ -342,7 +342,7 @@ pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: boo
             if (tcb.read_nxt + tcb.irs + size as u32) < tcb.rcv_nxt {
                 let i = tcb.read_nxt as usize;
                 println!("payload: {}",
-                         String::from_utf8_lossy(&tcb.rcv_buffer[i..size]));
+                         String::from_utf8_lossy(&tcb.rcv_buffer[i..i + size]));
                 tcb.read_nxt += size as u32;
                 size
             } else if !block {
