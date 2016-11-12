@@ -69,6 +69,7 @@ struct TCB {
     rcv_nxt: u32, // receive next
     rcv_wnd: u16, // receive window (size)
     irs: u32, // initial receive sequence number
+    read_nxt: u32,
 
     // only for LISTEN
     conns_q: VecDeque<TCB>,
@@ -98,6 +99,7 @@ impl TCB {
             rcv_nxt: 0,
             rcv_wnd: TCP_MAX_WINDOW_SZ as u16,
             irs: rand::random::<u16>() as u32,
+            read_nxt: 0,
 
             conns_q: VecDeque::new(),
         }
@@ -325,9 +327,18 @@ pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: boo
     let tcp = &mut *tcp_ctx.write().unwrap();
     match tcp.tc_blocks.get_mut(&socket) {
         Some(tcb) => {
-            println!("payload: {}",
-                     String::from_utf8_lossy(&tcb.rcv_buffer[..size]));
-            size
+            if (tcb.read_nxt + tcb.irs + size as u32) < tcb.rcv_nxt {
+                let i = tcb.read_nxt as usize;
+                println!("payload: {}",
+                         String::from_utf8_lossy(&tcb.rcv_buffer[i..size]));
+                tcb.read_nxt += size as u32;
+                size
+            } else if !block {
+                warn!("not enough bytes in recv buffer");
+                0
+            } else {
+                0
+            }
         }
         None => 0,
     }
