@@ -382,6 +382,7 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
                     tos: 0,
                     opt: vec![],
                 };
+                tcb.snd_nxt += message.len() as u32;
             }
             None => {
                 return Err("Error: No connection setup!".to_owned());
