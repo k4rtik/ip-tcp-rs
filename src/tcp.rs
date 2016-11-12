@@ -93,11 +93,11 @@ impl TCB {
             snd_wnd: TCP_MAX_WINDOW_SZ as u16,
             snd_wl1: 0,
             snd_wl2: 0,
-            iss: rand::random::<u32>(),
+            iss: rand::random::<u16>() as u32,
 
             rcv_nxt: 0,
             rcv_wnd: TCP_MAX_WINDOW_SZ as u16,
-            irs: rand::random::<u32>(),
+            irs: rand::random::<u16>() as u32,
 
             conns_q: VecDeque::new(),
         }
@@ -403,12 +403,17 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
     let pkt_flags = pkt.get_flags();
     let pkt_window = pkt.get_window();
 
+    let pkt_size = ip_params.len;
+
     let (lip, lp, dip, dp) =
         (ip_params.dst, pkt.get_destination(), ip_params.src, pkt.get_source());
 
     let mut need_new_tcb = false;
     let mut should_send_packet = false;
     let mut parent_socket = 0;
+
+    let mut mark_tcb_for_deletion = false;
+    let mut sock_to_be_deleted = 0;
 
     let t_params: TcpParams;
     let pkt_sz = MutableTcpPacket::minimum_packet_size();
@@ -427,6 +432,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
             // regular socket
             if tcb.local_ip == lip && tcb.local_port == lp && tcb.remote_ip == dip &&
                tcb.remote_port == dp {
+                debug!("found matching socket");
                 match tcb.state {
                     STATUS::Closed => {
                         // Pg. 65 in RFC 793
@@ -488,23 +494,45 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                         }
                     }
                     _ => {
-                        // otherwise, pg. 69 in RFC 793
+                        // Otherwise, pg. 69 in RFC 793
                         // TODO discard old dups
-                        let seg_len = pkt.payload().len() as u32;
+                        let seg_len = pkt_size as u32 - 20;
+                        debug!("incoming segment length: {}", seg_len);
                         if tcb.rcv_wnd == 0 {
                             if seg_len > 0 {
-                                // TODO send ACK
-                                warn!("Dropping packet, cannot accept with 0 window");
+                                warn!("Dropping packet, cannot accept with 0 window, sending ACK...");
+                                t_params = TcpParams {
+                                    src_port: tcb.local_port,
+                                    dst_port: tcb.remote_port,
+                                    seq_num: tcb.snd_nxt,
+                                    ack_num: tcb.rcv_nxt,
+                                    flags: TcpFlags::ACK,
+                                    window: tcb.rcv_wnd,
+                                };
+                                build_tcp_header(t_params, lip, dip, None, &mut pkt_buf);
+                                should_send_packet = true;
+                                break;
                             } else if seg_len == 0 && pkt_seq_num == tcb.rcv_nxt {
-                                info!("received packet is probably ACK");
+                                info!("received packet is probably an ACK");
                             } else {
-                                // TODO send ACK
-                                warn!("Dropping packet, looks invalid");
+                                warn!("Dropping packet, looks invalid, sending ACK...");
+                                t_params = TcpParams {
+                                    src_port: tcb.local_port,
+                                    dst_port: tcb.remote_port,
+                                    seq_num: tcb.snd_nxt,
+                                    ack_num: tcb.rcv_nxt,
+                                    flags: TcpFlags::ACK,
+                                    window: tcb.rcv_wnd,
+                                };
+                                build_tcp_header(t_params, lip, dip, None, &mut pkt_buf);
+                                should_send_packet = true;
+                                break;
                             }
-                        } else if tcb.rcv_wnd > 0 {
+                        } else {
+                            // tcb.rcv_wnd > 0
                             if seg_len == 0 && tcb.rcv_nxt <= pkt_seq_num &&
                                pkt_seq_num < tcb.rcv_nxt + tcb.rcv_wnd as u32 {
-                                info!("received packet is probably ACK");
+                                info!("received packet is probably an ACK");
                             } else if seg_len > 0 &&
                                       (tcb.rcv_nxt <= pkt_seq_num &&
                                        pkt_seq_num < tcb.rcv_nxt + tcb.rcv_wnd as u32 ||
@@ -513,52 +541,129 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                                        tcb.rcv_nxt + tcb.rcv_wnd as u32) {
                                 if tcb.rcv_nxt == pkt_seq_num {
                                     // ideal case
-                                    if pkt_flags != TcpFlags::ACK {
-                                        warn!("Dropping packet, no ACK flag set");
-                                        return;
+                                    if pkt_flags & TcpFlags::SYN == TcpFlags::SYN {
+                                        // Pg. 71 in RFC 793
+                                        warn!("received SYN in the window, discarding TCB");
+                                        println!("connection reset");
+                                        tcb.state = STATUS::Closed;
+                                        mark_tcb_for_deletion = true;
+                                        sock_to_be_deleted = *sock;
+                                        break;
                                     }
 
-                                    if tcb.snd_una < pkt_ack && pkt_ack <= tcb.snd_nxt {
-                                        tcb.snd_una = pkt_ack;
-                                        // TODO discard old segments from retransmit_q and inform user of
-                                        // v_write of success
+                                    if pkt_flags & TcpFlags::ACK == TcpFlags::ACK {
+                                        match tcb.state {
+                                            STATUS::SynRcvd => {
+                                                // Pg. 72 in RFC 793
+                                                if tcb.snd_una <= pkt_ack &&
+                                                   pkt_ack <= tcb.snd_nxt {
+                                                    tcb.state = STATUS::Estab;
+                                                    println!("v_connect() returned 0");
+                                                }
+                                            }
+                                            STATUS::Estab | STATUS::FinWait1 |
+                                            STATUS::FinWait2 | STATUS::CloseWait |
+                                            STATUS::Closing => {
+                                                if tcb.snd_una < pkt_ack && pkt_ack <= tcb.snd_nxt {
+                                                    tcb.snd_una = pkt_ack;
+                                                    // TODO discard old segments from retransmit_q
+                                                    // and inform user of success of v_write()
 
-                                        // update send window
-                                        if tcb.snd_wl1 < pkt_ack ||
-                                           (tcb.snd_wl1 == pkt_ack && tcb.snd_wl2 <= pkt_ack) {
-                                            tcb.snd_wnd = pkt_window;
-                                            tcb.snd_wl1 = pkt_seq_num;
-                                            tcb.snd_wl2 = pkt_ack;
+                                                    // update send window
+                                                    if tcb.snd_wl1 < pkt_ack ||
+                                                       (tcb.snd_wl1 == pkt_ack &&
+                                                        tcb.snd_wl2 <= pkt_ack) {
+                                                        tcb.snd_wnd = pkt_window;
+                                                        tcb.snd_wl1 = pkt_seq_num;
+                                                        tcb.snd_wl2 = pkt_ack;
+                                                    }
+                                                } else if pkt_ack < tcb.snd_una {
+                                                    info!("ignoring duplicate ACK");
+                                                    break;
+                                                } else if pkt_ack > tcb.snd_nxt {
+                                                    warn!("Dropping segment, received too early, sending ACK");
+                                                    // Send ACK
+                                                    t_params = TcpParams {
+                                                        src_port: tcb.local_port,
+                                                        dst_port: tcb.remote_port,
+                                                        seq_num: tcb.snd_nxt,
+                                                        ack_num: tcb.rcv_nxt,
+                                                        flags: TcpFlags::ACK,
+                                                        window: tcb.rcv_wnd,
+                                                    };
+                                                    build_tcp_header(t_params,
+                                                                     lip,
+                                                                     dip,
+                                                                     None,
+                                                                     &mut pkt_buf);
+                                                    should_send_packet = true;
+                                                    break;
+                                                }
+
+                                                // TODO more specific processing, see pg. 73
+                                                match tcb.state {
+                                                    STATUS::FinWait1 => {}
+                                                    STATUS::FinWait2 => {}
+                                                    STATUS::CloseWait => {}
+                                                    STATUS::Closing => {}
+                                                    _ => {}
+                                                }
+
+                                                // TODO payload processing, see pg. 74
+                                                match tcb.state {
+                                                    STATUS::Estab | STATUS::FinWait1 |
+                                                    STATUS::FinWait2 => {
+                                                        // TODO put the received segment in the right
+                                                        // place in the buffer
+                                                        tcb.rcv_buffer
+                                                            .append(&mut pkt.payload().to_vec());
+                                                        tcb.rcv_nxt = pkt_seq_num + seg_len;
+                                                        // TODO adjust rcv window
+
+                                                        // Send ACK
+                                                        t_params = TcpParams {
+                                                            src_port: tcb.local_port,
+                                                            dst_port: tcb.remote_port,
+                                                            seq_num: tcb.snd_nxt,
+                                                            ack_num: tcb.rcv_nxt,
+                                                            flags: TcpFlags::ACK,
+                                                            window: tcb.rcv_wnd,
+                                                        };
+                                                        build_tcp_header(t_params,
+                                                                         lip,
+                                                                         dip,
+                                                                         None,
+                                                                         &mut pkt_buf);
+                                                        should_send_packet = true;
+                                                    }
+                                                    _ => {}
+                                                }
+                                            }
+                                            STATUS::LastAck => {}
+                                            STATUS::TimeWait => {}
+                                            _ => {}
                                         }
-                                    } else if pkt_ack < tcb.snd_una {
-                                        info!("ignoring duplicate");
-                                    } else if pkt_ack > tcb.snd_nxt {
-                                        // TODO send ACK
-                                        warn!("Dropping packet, received too early");
+
+
+                                    } else {
+                                        warn!("Dropping packet, no ACK flag set");
+                                        break;
                                     }
-
-                                    // payload processing
-                                    tcb.rcv_nxt = pkt_seq_num + (pkt.payload().len() as u32);
-                                    // TODO put the received segment in the right place in the buffer
-                                    tcb.rcv_buffer.append(&mut pkt.payload().to_vec());
-
-                                    // Send ACK
-                                    t_params = TcpParams {
-                                        src_port: tcb.local_port,
-                                        dst_port: tcb.remote_port,
-                                        seq_num: tcb.snd_nxt,
-                                        ack_num: tcb.rcv_nxt,
-                                        flags: TcpFlags::ACK,
-                                        window: tcb.rcv_wnd,
-                                    };
-                                    build_tcp_header(t_params, lip, dip, None, &mut pkt_buf);
-                                    should_send_packet = true;
                                 } else {
-                                    // non-ideal case
+                                    // TODO non-ideal case, ie, might need trimming
                                 }
                             } else {
-                                // TODO send ACK
-                                warn!("Dropping packet, unacceptable!");
+                                warn!("Dropping packet, unacceptable! Sending ACK...");
+                                t_params = TcpParams {
+                                    src_port: tcb.local_port,
+                                    dst_port: tcb.remote_port,
+                                    seq_num: tcb.snd_nxt,
+                                    ack_num: tcb.rcv_nxt,
+                                    flags: TcpFlags::ACK,
+                                    window: tcb.rcv_wnd,
+                                };
+                                build_tcp_header(t_params, lip, dip, None, &mut pkt_buf);
+                                should_send_packet = true;
                             }
                         }
                     }
@@ -633,6 +738,12 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                     println!("v_accept on socket {} returned {}", parent_socket, sock_id);
                 }
             }
+        }
+
+        if mark_tcb_for_deletion {
+            let tcb = tcp.tc_blocks.remove(&sock_to_be_deleted).unwrap();
+            tcp.free_sockets.push(sock_to_be_deleted);
+            tcp.bound_ports.remove(&(tcb.local_ip, tcb.local_port));
         }
     }
 
