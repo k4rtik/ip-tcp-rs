@@ -237,7 +237,6 @@ impl TCP {
                 if tcb.local_port == 0 {
                     tcb.local_ip = ip_port.0;
                     tcb.local_port = ip_port.1;
-                    tcb.remote_port = 0;
                     self.bound_ports.insert((tcb.local_ip, tcb.local_port));
                 }
                 tcb.state = STATUS::Listen;
@@ -322,7 +321,7 @@ pub fn v_accept(tcp_ctx: &Arc<RwLock<TCP>>,
                 socket: usize,
                 addr: Option<Ipv4Addr>)
                 -> Result<usize, String> {
-    thread::sleep(Duration::from_secs(0));
+    thread::sleep(Duration::from_secs(100));
     Ok(0)
 }
 
