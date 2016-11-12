@@ -420,6 +420,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                    tcp_pkt: &[u8],
                    ip_params: ip::IpParams) {
     let pkt = TcpPacket::new(tcp_pkt).unwrap();
+    trace!("{:?}", pkt);
     // TODO verify checksum
     let pkt_seq_num = pkt.get_sequence();
     let pkt_ack = pkt.get_acknowledgement();
@@ -431,6 +432,8 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
     let (lip, lp, dip, dp) =
         (ip_params.dst, pkt.get_destination(), ip_params.src, pkt.get_source());
 
+    let mut found_match = false;
+
     let mut need_new_tcb = false;
     let mut should_send_packet = false;
     let mut parent_socket = 0;
@@ -438,7 +441,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
     let mut mark_tcb_for_deletion = false;
     let mut sock_to_be_deleted = 0;
 
-    let t_params: TcpParams;
+    let mut t_params: TcpParams;
     let pkt_sz = MutableTcpPacket::minimum_packet_size();
     let ip_params = ip::IpParams {
         src: lip,
@@ -455,6 +458,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
             // regular socket
             if tcb.local_ip == lip && tcb.local_port == lp && tcb.remote_ip == dip &&
                tcb.remote_port == dp {
+                found_match = true;
                 debug!("found matching socket");
                 match tcb.state {
                     STATUS::Closed => {
@@ -696,50 +700,55 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                 }
                 break;
             }
+        }
 
-            // listening socket
-            if tcb.local_ip == lip && tcb.local_port == lp {
-                // new connection
-                if tcb.state == STATUS::Listen && pkt_flags == TcpFlags::SYN {
-                    let mut ntcb = TCB::new();
-                    ntcb.local_ip = lip;
-                    ntcb.local_port = lp;
-                    ntcb.remote_ip = dip;
-                    ntcb.remote_port = dp;
+        if !found_match {
+            for (sock, tcb) in &mut tcp.tc_blocks {
+                // listening socket
+                if tcb.local_ip == lip && tcb.local_port == lp && tcb.state == STATUS::Listen {
+                    debug!("found matching listening socket");
+                    // new connection
+                    if pkt_flags == TcpFlags::SYN {
+                        let mut ntcb = TCB::new();
+                        ntcb.local_ip = lip;
+                        ntcb.local_port = lp;
+                        ntcb.remote_ip = dip;
+                        ntcb.remote_port = dp;
 
-                    ntcb.rcv_nxt = pkt_seq_num + 1;
-                    ntcb.irs = pkt_seq_num;
-                    // ntcb.snd_wnd = pkt_window;
-                    ntcb.snd_nxt = ntcb.iss + 1;
-                    ntcb.snd_una = ntcb.iss;
-                    ntcb.state = STATUS::SynRcvd;
+                        ntcb.rcv_nxt = pkt_seq_num + 1;
+                        ntcb.irs = pkt_seq_num;
+                        // ntcb.snd_wnd = pkt_window;
+                        ntcb.snd_nxt = ntcb.iss + 1;
+                        ntcb.snd_una = ntcb.iss;
+                        ntcb.state = STATUS::SynRcvd;
 
-                    tcp.bound_ports.insert((ntcb.local_ip, ntcb.local_port));
+                        tcp.bound_ports.insert((ntcb.local_ip, ntcb.local_port));
 
-                    t_params = TcpParams {
-                        src_port: tcb.local_port,
-                        dst_port: ntcb.remote_port,
-                        seq_num: ntcb.iss,
-                        ack_num: ntcb.rcv_nxt,
-                        flags: TcpFlags::SYN | TcpFlags::ACK,
-                        window: ntcb.rcv_wnd,
-                    };
-                    build_tcp_header(t_params, lip, dip, None, &mut pkt_buf);
-                    should_send_packet = true;
-                    tcb.conns_q.push_back(ntcb);
-                } else if tcb.state == STATUS::Listen && pkt_flags == TcpFlags::ACK {
-                    for ntcb in &mut tcb.conns_q {
-                        if ntcb.state == STATUS::SynRcvd && ntcb.remote_ip == dip &&
-                           ntcb.remote_port == dp {
-                            // TODO check for correct ack
-                            ntcb.state = STATUS::Estab;
-                            parent_socket = *sock;
-                            need_new_tcb = true;
-                            break;
+                        t_params = TcpParams {
+                            src_port: tcb.local_port,
+                            dst_port: ntcb.remote_port,
+                            seq_num: ntcb.iss,
+                            ack_num: ntcb.rcv_nxt,
+                            flags: TcpFlags::SYN | TcpFlags::ACK,
+                            window: ntcb.rcv_wnd,
+                        };
+                        build_tcp_header(t_params, lip, dip, None, &mut pkt_buf);
+                        should_send_packet = true;
+                        tcb.conns_q.push_back(ntcb);
+                    } else if pkt_flags == TcpFlags::ACK {
+                        for ntcb in &mut tcb.conns_q {
+                            if ntcb.state == STATUS::SynRcvd && ntcb.remote_ip == dip &&
+                               ntcb.remote_port == dp {
+                                // TODO check for correct ack
+                                ntcb.state = STATUS::Estab;
+                                parent_socket = *sock;
+                                need_new_tcb = true;
+                                break;
+                            }
                         }
                     }
+                    break;
                 }
-                break;
             }
         }
 
