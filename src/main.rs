@@ -82,13 +82,23 @@ fn print_routes(routes: Vec<Route>) {
 fn print_sockets(sockets: Vec<Socket>) {
     println!("socket\tlocal-addr\tport\tdst-addr\tport\tstatus");
     for s in sockets {
-        println!("{}\t{}\t\t{}\t{}\t\t{}\t{:?}",
-                 s.socket_id,
-                 s.local_addr,
-                 s.local_port,
-                 s.dst_addr,
-                 s.dst_port,
-                 s.status);
+        if s.dst_port != 0 {
+            println!("{}\t{}\t{}\t{}\t{}\t{:?}",
+                     s.socket_id,
+                     s.local_addr,
+                     s.local_port,
+                     s.dst_addr,
+                     s.dst_port,
+                     s.status);
+        } else {
+            println!("{}\t{}\t{}\t{}\t\t{}\t{:?}",
+                     s.socket_id,
+                     s.local_addr,
+                     s.local_port,
+                     s.dst_addr,
+                     s.dst_port,
+                     s.status);
+        }
     }
 }
 
