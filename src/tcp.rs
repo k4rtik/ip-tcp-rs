@@ -255,8 +255,18 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
                  dst_addr: Ipv4Addr,
                  port: u16)
                  -> Result<(), String> {
-    let unused_port = (*tcp_ctx.read().unwrap()).get_unused_ip_port(dl_ctx).unwrap().1;
     let local_ip = (*rip_ctx.read().unwrap()).get_next_hop(dst_addr).unwrap();
+    let mut unused_port: u16 = 0;
+    for port in 1024..65535 {
+        if !(*tcp_ctx.read().unwrap()).bound_ports.contains(&(local_ip, port)) {
+            unused_port = port;
+            break;
+        }
+    }
+
+    if unused_port == 0 {
+        return Err("Ran out of free ports!".to_owned());
+    }
 
     let t_params: TcpParams;
     let ip_params: ip::IpParams;
