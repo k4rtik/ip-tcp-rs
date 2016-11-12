@@ -215,9 +215,11 @@ impl TCP {
 
     fn get_unused_ip_port(&self, dl_ctx: &Arc<RwLock<DataLink>>) -> Option<(Ipv4Addr, u16)> {
         let ifaces = (*dl_ctx.read().unwrap()).get_interfaces();
-        for port in 1024..65535 {
-            for iface in &ifaces {
+        for iface in &ifaces {
+            for port in 1024..65535 {
                 if !self.bound_ports.contains(&(iface.src, port)) {
+                    debug!("Bound ports: {:?}", self.bound_ports);
+                    debug!("Returning: {:?} {:?}", iface.src, port);
                     return Some((iface.src, port));
                 }
             }
@@ -235,6 +237,7 @@ impl TCP {
                 if tcb.local_port == 0 {
                     tcb.local_ip = ip_port.0;
                     tcb.local_port = ip_port.1;
+                    tcb.remote_port = 0;
                     self.bound_ports.insert((tcb.local_ip, tcb.local_port));
                 }
                 tcb.state = STATUS::Listen;
@@ -319,7 +322,7 @@ pub fn v_accept(tcp_ctx: &Arc<RwLock<TCP>>,
                 socket: usize,
                 addr: Option<Ipv4Addr>)
                 -> Result<usize, String> {
-    thread::sleep(Duration::from_secs(10));
+    thread::sleep(Duration::from_secs(0));
     Ok(0)
 }
 
@@ -408,7 +411,6 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                    tcp_pkt: &[u8],
                    ip_params: ip::IpParams) {
     let pkt = TcpPacket::new(tcp_pkt).unwrap();
-
     // TODO verify checksum
     let pkt_seq_num = pkt.get_sequence();
     let pkt_ack = pkt.get_acknowledgement();
@@ -627,6 +629,9 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                                                     STATUS::FinWait2 => {
                                                         // TODO put the received segment in the right
                                                         // place in the buffer
+                                                        debug!("Appending to socket: {:?}, {:?}",
+                                                               tcb.remote_ip,
+                                                               tcb.remote_port);
                                                         tcb.rcv_buffer
                                                             .append(&mut pkt.payload().to_vec());
                                                         tcb.rcv_nxt = pkt_seq_num + seg_len;
