@@ -460,6 +460,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                tcb.remote_port == dp {
                 found_match = true;
                 debug!("found matching socket");
+		tcb.snd_wnd = pkt_window;
                 match tcb.state {
                     STATUS::Closed => {
                         // Pg. 65 in RFC 793
@@ -717,7 +718,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
 
                         ntcb.rcv_nxt = pkt_seq_num + 1;
                         ntcb.irs = pkt_seq_num;
-                        // ntcb.snd_wnd = pkt_window;
+                        ntcb.snd_wnd = pkt_window;
                         ntcb.snd_nxt = ntcb.iss + 1;
                         ntcb.snd_una = ntcb.iss;
                         ntcb.state = STATUS::SynRcvd;
