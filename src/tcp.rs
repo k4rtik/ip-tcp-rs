@@ -344,6 +344,8 @@ pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: boo
                 println!("payload: {}",
                          String::from_utf8_lossy(&tcb.rcv_buffer[i..i + size]));
                 tcb.read_nxt += size as u32;
+                tcb.rcv_wnd += size as u16;
+                debug!("rcv_wnd = {:?}", tcb.rcv_wnd);
                 size
             } else if !block {
                 warn!("not enough bytes in recv buffer");
@@ -397,6 +399,7 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
                     };
                     tcb.snd_nxt += message.len() as u32;
                     tcb.snd_wnd -= message.len() as u16;
+                    // possibility of deadlock on tcp_ctx
                     ip::send(dl_ctx,
                              Some(rip_ctx),
                              Some(tcp_ctx),
@@ -405,8 +408,8 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
                              rip::INFINITY,
                              segment.packet().to_vec(),
                              0,
-			     true)
-			    .unwrap();
+                             true)
+                        .unwrap();
                 } else {
                     warn!("No place in the send window!");
                 }
@@ -466,7 +469,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                 found_match = true;
                 debug!("found matching socket");
                 tcb.snd_wnd = pkt_window;
-		trace!("snd_wnd = {:?}", tcb.snd_wnd);
+                debug!("snd_wnd = {:?}", tcb.snd_wnd);
                 match tcb.state {
                     STATUS::Closed => {
                         // Pg. 65 in RFC 793
@@ -608,7 +611,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                                                        (tcb.snd_wl1 == pkt_ack &&
                                                         tcb.snd_wl2 <= pkt_ack) {
                                                         tcb.snd_wnd = pkt_window;
-							trace!("snd_wnd = {:?}", tcb.snd_wnd);
+                                                        debug!("snd_wnd = {:?}", tcb.snd_wnd);
                                                         tcb.snd_wl1 = pkt_seq_num;
                                                         tcb.snd_wl2 = pkt_ack;
                                                     }
@@ -659,7 +662,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                                                                 .append(&mut pkt.payload()
                                                                     .to_vec());
                                                             tcb.rcv_wnd -= seg_len as u16;
-							    trace!("rcv_wnd = {:?}", tcb.rcv_wnd);
+                                                            debug!("rcv_wnd = {:?}", tcb.rcv_wnd);
                                                             tcb.rcv_nxt = pkt_seq_num + seg_len;
                                                             // TODO adjust rcv window
 
