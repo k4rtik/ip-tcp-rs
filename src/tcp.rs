@@ -371,46 +371,51 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
         let tcp = &mut *tcp_ctx.write().unwrap();
         match tcp.tc_blocks.get_mut(&socket) {
             Some(tcb) => {
-                t_params = TcpParams {
-                    src_port: tcb.local_port,
-                    dst_port: tcb.remote_port,
-                    seq_num: tcb.snd_nxt,
-                    ack_num: tcb.rcv_nxt,
-                    flags: TcpFlags::ACK,
-                    window: tcb.rcv_wnd,
-                };
-                pkt_buf = vec![0u8; TcpPacket::minimum_packet_size() + message.len()];
-                build_tcp_header(t_params,
-                                 tcb.local_ip,
-                                 tcb.remote_ip,
-                                 Some(message),
-                                 &mut pkt_buf);
-                segment = MutableTcpPacket::new(&mut pkt_buf).unwrap();
-                let pkt_sz = MutableTcpPacket::packet_size(&segment.from_packet());
-                ip_params = ip::IpParams {
-                    src: tcb.local_ip,
-                    dst: tcb.remote_ip,
-                    len: pkt_sz,
-                    tos: 0,
-                    opt: vec![],
-                };
-                tcb.snd_nxt += message.len() as u32;
+                if tcb.snd_wnd > ((tcb.snd_nxt - tcb.iss + message.len() as u32) as u16) {
+                    t_params = TcpParams {
+                        src_port: tcb.local_port,
+                        dst_port: tcb.remote_port,
+                        seq_num: tcb.snd_nxt,
+                        ack_num: tcb.rcv_nxt,
+                        flags: TcpFlags::ACK,
+                        window: tcb.rcv_wnd,
+                    };
+                    pkt_buf = vec![0u8; TcpPacket::minimum_packet_size() + message.len()];
+                    build_tcp_header(t_params,
+                                     tcb.local_ip,
+                                     tcb.remote_ip,
+                                     Some(message),
+                                     &mut pkt_buf);
+                    segment = MutableTcpPacket::new(&mut pkt_buf).unwrap();
+                    let pkt_sz = MutableTcpPacket::packet_size(&segment.from_packet());
+                    ip_params = ip::IpParams {
+                        src: tcb.local_ip,
+                        dst: tcb.remote_ip,
+                        len: pkt_sz,
+                        tos: 0,
+                        opt: vec![],
+                    };
+                    tcb.snd_nxt += message.len() as u32;
+                    tcb.snd_wnd -= message.len() as u16;
+                    ip::send(dl_ctx,
+                             Some(rip_ctx),
+                             Some(tcp_ctx),
+                             ip_params,
+                             TCP_PROT,
+                             rip::INFINITY,
+                             segment.packet().to_vec(),
+                             0,
+			     true)
+			    .unwrap();
+                } else {
+                    warn!("No place in the send window!");
+                }
             }
             None => {
                 return Err("Error: No connection setup!".to_owned());
             }
         }
     }
-    ip::send(dl_ctx,
-             Some(rip_ctx),
-             Some(tcp_ctx),
-             ip_params,
-             TCP_PROT,
-             rip::INFINITY,
-             segment.packet().to_vec(),
-             0,
-             true)
-        .unwrap();
     Ok(message.len())
 }
 
@@ -460,7 +465,8 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                tcb.remote_port == dp {
                 found_match = true;
                 debug!("found matching socket");
-		tcb.snd_wnd = pkt_window;
+                tcb.snd_wnd = pkt_window;
+		trace!("snd_wnd = {:?}", tcb.snd_wnd);
                 match tcb.state {
                     STATUS::Closed => {
                         // Pg. 65 in RFC 793
@@ -602,6 +608,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                                                        (tcb.snd_wl1 == pkt_ack &&
                                                         tcb.snd_wl2 <= pkt_ack) {
                                                         tcb.snd_wnd = pkt_window;
+							trace!("snd_wnd = {:?}", tcb.snd_wnd);
                                                         tcb.snd_wl1 = pkt_seq_num;
                                                         tcb.snd_wl2 = pkt_ack;
                                                     }
@@ -643,29 +650,37 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                                                     STATUS::FinWait2 => {
                                                         // TODO put the received segment in the right
                                                         // place in the buffer
-                                                        debug!("Appending to socket: {:?}, {:?}",
-                                                               tcb.remote_ip,
-                                                               tcb.remote_port);
-                                                        tcb.rcv_buffer
-                                                            .append(&mut pkt.payload().to_vec());
-                                                        tcb.rcv_nxt = pkt_seq_num + seg_len;
-                                                        // TODO adjust rcv window
+                                                        if tcb.rcv_nxt - tcb.irs + seg_len <=
+                                                           tcb.rcv_wnd as u32 {
+                                                            debug!("Appending to socket: {:?}, {:?}",
+                                                                   tcb.remote_ip,
+                                                                   tcb.remote_port);
+                                                            tcb.rcv_buffer
+                                                                .append(&mut pkt.payload()
+                                                                    .to_vec());
+                                                            tcb.rcv_wnd -= seg_len as u16;
+							    trace!("rcv_wnd = {:?}", tcb.rcv_wnd);
+                                                            tcb.rcv_nxt = pkt_seq_num + seg_len;
+                                                            // TODO adjust rcv window
 
-                                                        // Send ACK
-                                                        t_params = TcpParams {
-                                                            src_port: tcb.local_port,
-                                                            dst_port: tcb.remote_port,
-                                                            seq_num: tcb.snd_nxt,
-                                                            ack_num: tcb.rcv_nxt,
-                                                            flags: TcpFlags::ACK,
-                                                            window: tcb.rcv_wnd,
-                                                        };
-                                                        build_tcp_header(t_params,
-                                                                         lip,
-                                                                         dip,
-                                                                         None,
-                                                                         &mut pkt_buf);
-                                                        should_send_packet = true;
+                                                            // Send ACK
+                                                            t_params = TcpParams {
+                                                                src_port: tcb.local_port,
+                                                                dst_port: tcb.remote_port,
+                                                                seq_num: tcb.snd_nxt,
+                                                                ack_num: tcb.rcv_nxt,
+                                                                flags: TcpFlags::ACK,
+                                                                window: tcb.rcv_wnd,
+                                                            };
+                                                            build_tcp_header(t_params,
+                                                                             lip,
+                                                                             dip,
+                                                                             None,
+                                                                             &mut pkt_buf);
+                                                            should_send_packet = true;
+                                                        } else {
+                                                            warn!("No place in recv window!");
+                                                        }
                                                     }
                                                     _ => {}
                                                 }
