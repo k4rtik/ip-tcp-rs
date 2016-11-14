@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::collections::vec_deque::VecDeque;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, Mutex};
 use std::net::Ipv4Addr;
 use std::thread;
 use std::time::Duration;
 use std::str;
+use std::sync::mpsc::{self, Sender, Receiver};
 
 use pnet_macros_support::types::*;
 use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpPacket, TcpFlags};
@@ -32,6 +33,11 @@ pub enum STATUS {
     LastAck,
     TimeWait,
     Closed,
+}
+
+pub struct TCPpkt_IPparams {
+    pub pkt: MutableTcpPacket<'static>,
+    pub params: ip::IpParams,
 }
 
 #[derive(Debug)]
@@ -73,10 +79,13 @@ struct TCB {
 
     // only for LISTEN
     conns_q: VecDeque<TCB>,
+    s_chann: Arc<Mutex<Sender<TCPpkt_IPparams>>>,
+    r_chann: Arc<Mutex<Receiver<TCPpkt_IPparams>>>,
 }
 
 impl TCB {
     fn new() -> TCB {
+        let (tx, rx): (Sender<TCPpkt_IPparams>, Receiver<TCPpkt_IPparams>) = mpsc::channel();
         TCB {
             local_ip: "0.0.0.0".parse::<Ipv4Addr>().unwrap(),
             local_port: 0,
@@ -102,6 +111,8 @@ impl TCB {
             read_nxt: 0,
 
             conns_q: VecDeque::new(),
+            s_chann: Arc::new(Mutex::new(tx)),
+            r_chann: Arc::new(Mutex::new(rx)),
         }
     }
 }
@@ -112,6 +123,15 @@ pub struct TCP {
     tc_blocks: HashMap<usize, TCB>,
     free_sockets: Vec<usize>,
     bound_ports: HashSet<(Ipv4Addr, u16)>,
+    fourtup_to_sock: HashMap<FourTup, usize>,
+}
+
+#[derive(Hash, PartialEq, Eq)]
+pub struct FourTup {
+    pub src_ip: Ipv4Addr,
+    pub src_port: u16,
+    pub dst_ip: Ipv4Addr,
+    pub dst_port: u16,
 }
 
 pub struct TcpParams {
@@ -151,6 +171,7 @@ impl TCP {
             tc_blocks: HashMap::new(),
             free_sockets: Vec::new(),
             bound_ports: HashSet::new(),
+            fourtup_to_sock: HashMap::new(),
         }
     }
 
@@ -405,8 +426,8 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
                              rip::INFINITY,
                              segment.packet().to_vec(),
                              0,
-			     true)
-			    .unwrap();
+                             true)
+                        .unwrap();
                 } else {
                     warn!("No place in the send window!");
                 }
@@ -417,6 +438,33 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
         }
     }
     Ok(message.len())
+}
+
+
+pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>,
+             pkt: &[u8],
+             ip_params: ip::IpParams)
+             -> Result<Arc<Mutex<Sender<TCPpkt_IPparams>>>, String> {
+    let tcp = &mut *tcp_ctx.write().unwrap();
+    let tcp_pkt = TcpPacket::new(pkt).unwrap();
+    let four_tup = FourTup {
+        src_ip: ip_params.src,
+        src_port: tcp_pkt.get_source(),
+        dst_ip: ip_params.dst,
+        dst_port: tcp_pkt.get_destination(),
+    };
+    match tcp.fourtup_to_sock.get(&four_tup) {
+        Some(sock) => {
+            match tcp.tc_blocks.get(&sock) {
+                Some(tcb) => {
+                    let s_chann_clone = tcb.s_chann.clone();
+                    Ok(s_chann_clone)
+                }
+                None => Err("No matching TCB found!".to_owned()),
+            }
+        }
+        None => Err("No corresponding socket found!".to_owned()),
+    }
 }
 
 pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
@@ -466,7 +514,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                 found_match = true;
                 debug!("found matching socket");
                 tcb.snd_wnd = pkt_window;
-		trace!("snd_wnd = {:?}", tcb.snd_wnd);
+                trace!("snd_wnd = {:?}", tcb.snd_wnd);
                 match tcb.state {
                     STATUS::Closed => {
                         // Pg. 65 in RFC 793
@@ -608,7 +656,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                                                        (tcb.snd_wl1 == pkt_ack &&
                                                         tcb.snd_wl2 <= pkt_ack) {
                                                         tcb.snd_wnd = pkt_window;
-							trace!("snd_wnd = {:?}", tcb.snd_wnd);
+                                                        trace!("snd_wnd = {:?}", tcb.snd_wnd);
                                                         tcb.snd_wl1 = pkt_seq_num;
                                                         tcb.snd_wl2 = pkt_ack;
                                                     }
@@ -659,7 +707,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                                                                 .append(&mut pkt.payload()
                                                                     .to_vec());
                                                             tcb.rcv_wnd -= seg_len as u16;
-							    trace!("rcv_wnd = {:?}", tcb.rcv_wnd);
+                                                            trace!("rcv_wnd = {:?}", tcb.rcv_wnd);
                                                             tcb.rcv_nxt = pkt_seq_num + seg_len;
                                                             // TODO adjust rcv window
 
