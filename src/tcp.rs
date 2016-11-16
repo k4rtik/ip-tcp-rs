@@ -35,6 +35,14 @@ pub enum STATUS {
     Closed,
 }
 
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum CMD {
+    UserCall,
+    Timeout,
+    IpRecv,
+}
+
 pub struct TCPpkt_IPparams {
     pub pkt: MutableTcpPacket<'static>,
     pub params: ip::IpParams,
@@ -442,28 +450,37 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
 
 
 pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>,
-             pkt: &[u8],
-             ip_params: ip::IpParams)
-             -> Result<Arc<Mutex<Sender<TCPpkt_IPparams>>>, String> {
+             bytes: &[u8],
+             cmd: CMD,
+             ip_params: Option<ip::IpParams>)
+             -> Result<(), String> {
     let tcp = &mut *tcp_ctx.write().unwrap();
-    let tcp_pkt = TcpPacket::new(pkt).unwrap();
-    let four_tup = FourTup {
-        src_ip: ip_params.src,
-        src_port: tcp_pkt.get_source(),
-        dst_ip: ip_params.dst,
-        dst_port: tcp_pkt.get_destination(),
-    };
-    match tcp.fourtup_to_sock.get(&four_tup) {
-        Some(sock) => {
-            match tcp.tc_blocks.get(&sock) {
-                Some(tcb) => {
-                    let s_chann_clone = tcb.s_chann.clone();
-                    Ok(s_chann_clone)
+    match cmd {
+        CMD::IpRecv => {
+            let ip_params = ip_params.unwrap();
+            let tcp_pkt = TcpPacket::new(bytes).unwrap();
+            let four_tup = FourTup {
+                src_ip: ip_params.src,
+                src_port: tcp_pkt.get_source(),
+                dst_ip: ip_params.dst,
+                dst_port: tcp_pkt.get_destination(),
+            };
+            match tcp.fourtup_to_sock.get(&four_tup) {
+                Some(sock) => {
+                    match tcp.tc_blocks.get(&sock) {
+                        Some(tcb) => {
+                            // *(tcb.s_chann.write().unwrap()).send(tcp_pkt);
+                            Ok(())
+                        }
+                        None => Err("No matching TCB found!".to_owned()),
+                    }
                 }
-                None => Err("No matching TCB found!".to_owned()),
+                None => Err("No corresponding socket found!".to_owned()),
             }
         }
-        None => Err("No corresponding socket found!".to_owned()),
+        CMD::UserCall => Ok(()),
+
+        _ => Err("Unrecognized command!".to_owned()),
     }
 }
 
