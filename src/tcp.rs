@@ -5,6 +5,7 @@ use std::net::Ipv4Addr;
 use std::thread;
 use std::time::Duration;
 use std::str;
+use std::sync::mpsc::{self, Sender, Receiver};
 
 use pnet_macros_support::types::*;
 use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpPacket, TcpFlags};
@@ -32,6 +33,19 @@ pub enum STATUS {
     LastAck,
     TimeWait,
     Closed,
+}
+
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum CMD {
+    UserCall,
+    Timeout,
+    IpRecv,
+}
+
+pub struct SegmentIpParams {
+    pub pkt: MutableTcpPacket<'static>,
+    pub params: ip::IpParams,
 }
 
 #[derive(Debug)]
@@ -77,6 +91,7 @@ struct TCB {
 
 impl TCB {
     fn new() -> TCB {
+        // let (tx, rx): (Sender<SegmentIpParams>, Receiver<SegmentIpParams>) = mpsc::channel();
         TCB {
             local_ip: "0.0.0.0".parse::<Ipv4Addr>().unwrap(),
             local_port: 0,
@@ -112,6 +127,15 @@ pub struct TCP {
     tc_blocks: HashMap<usize, TCB>,
     free_sockets: Vec<usize>,
     bound_ports: HashSet<(Ipv4Addr, u16)>,
+    fourtup_to_sock: HashMap<FourTup, usize>, // sock_to_sender: HashMap<usize, Sender<SegmentIpParams>>,
+}
+
+#[derive(Hash, PartialEq, Eq)]
+pub struct FourTup {
+    pub src_ip: Ipv4Addr,
+    pub src_port: u16,
+    pub dst_ip: Ipv4Addr,
+    pub dst_port: u16,
 }
 
 pub struct TcpParams {
@@ -151,6 +175,7 @@ impl TCP {
             tc_blocks: HashMap::new(),
             free_sockets: Vec::new(),
             bound_ports: HashSet::new(),
+            fourtup_to_sock: HashMap::new(), // sock_to_sender: HashMap::new(),
         }
     }
 
@@ -176,9 +201,10 @@ impl TCP {
             Some(socket) => socket,
             None => self.tc_blocks.len(),
         };
-
         let tcb = TCB::new();
+        let (tx, rx): (Sender<SegmentIpParams>, Receiver<SegmentIpParams>) = mpsc::channel();
 
+        // self.sock_to_sender.insert(sock_id, tx);
         match self.tc_blocks.insert(sock_id, tcb) {
             Some(v) => {
                 warn!("overwrote exisiting value: {:?}", v);
@@ -420,6 +446,43 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
         }
     }
     Ok(message.len())
+}
+
+
+pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>,
+             bytes: &[u8],
+             cmd: CMD,
+             ip_params: Option<ip::IpParams>)
+             -> Result<(), String> {
+    let tcp = &mut *tcp_ctx.write().unwrap();
+    match cmd {
+        CMD::IpRecv => {
+            let ip_params = ip_params.unwrap();
+            let tcp_pkt = TcpPacket::new(bytes).unwrap();
+            let four_tup = FourTup {
+                src_ip: ip_params.src,
+                src_port: tcp_pkt.get_source(),
+                dst_ip: ip_params.dst,
+                dst_port: tcp_pkt.get_destination(),
+            };
+            match tcp.fourtup_to_sock.get(&four_tup) {
+                Some(sock) => {
+                    Ok(())
+                    // match tcp.sock_to_sender.get(&sock) {
+                    //     Some(sender) => {
+                    //         // *(tcb.s_chann.write().unwrap()).send(tcp_pkt);
+                    //         Ok(())
+                    //     }
+                    //     None => Err("No matching sender found!".to_owned()),
+                    // }
+                }
+                None => Err("No corresponding socket found!".to_owned()),
+            }
+        }
+        CMD::UserCall => Ok(()),
+
+        _ => Err("Unrecognized command!".to_owned()),
+    }
 }
 
 pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
@@ -777,13 +840,13 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                 Some(socket) => socket,
                 None => tcp.tc_blocks.len(),
             };
-
+            let (tx, rx): (Sender<SegmentIpParams>, Receiver<SegmentIpParams>) = mpsc::channel();
             let tcb: TCB;
             {
                 let conns_q = &mut tcp.tc_blocks.get_mut(&parent_socket).unwrap().conns_q;
                 tcb = conns_q.pop_front().unwrap();
             }
-
+            // tcp.sock_to_sender.insert(sock_id, tx);
             match tcp.tc_blocks.insert(sock_id, tcb) {
                 Some(v) => {
                     warn!("overwrote exisiting value: {:?}", v);

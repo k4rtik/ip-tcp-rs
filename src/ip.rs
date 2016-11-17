@@ -142,17 +142,17 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>,
                         print_pkt_contents(pkt.to_immutable());
                     }
                     IpNextHeaderProtocol(6) => {
-                        tcp::pkt_handler(dl_ctx,
-                                         rip_ctx,
-                                         tcp_ctx.unwrap(),
-                                         pkt.payload(),
-                                         IpParams {
-                                             src: pkt.get_source(),
-                                             dst: pkt.get_destination(),
-                                             len: get_ipv4_payload_length(&pkt.to_immutable()),
-                                             tos: 0, // XXX hardcoded, incorrect
-                                             opt: pkt.get_options(),
-                                         });
+                        tcp::demux(tcp_ctx.unwrap(),
+                                   pkt.payload(),
+                                   tcp::CMD::IpRecv,
+                                   Some(IpParams {
+                                       src: pkt.get_source(),
+                                       dst: pkt.get_destination(),
+                                       len: get_ipv4_payload_length(&pkt.to_immutable()),
+                                       tos: 0, // XXX hardcoded, incorrect
+                                       opt: pkt.get_options(),
+                                   }))
+                            .unwrap();
                     }
                     IpNextHeaderProtocol(200) => {
                         rip::pkt_handler(rip_ctx,
