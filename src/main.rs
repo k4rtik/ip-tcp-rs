@@ -1,5 +1,5 @@
 extern crate clap;
-extern crate env_logger;
+extern crate pretty_env_logger;
 #[macro_use]
 extern crate log;
 extern crate pnet;
@@ -372,7 +372,7 @@ help                                - show this help");
 }
 
 fn main() {
-    env_logger::init().expect("Failed to initialize logger");
+    pretty_env_logger::init();
 
     let matches = App::new("node")
         .version("0.1.0")
