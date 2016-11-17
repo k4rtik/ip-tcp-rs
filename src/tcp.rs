@@ -5,8 +5,8 @@ use std::net::Ipv4Addr;
 use std::thread;
 use std::time::Duration;
 use std::str;
-use std::sync::mpsc::{self, Sender, Receiver};
 
+use crossbeam::sync::MsQueue;
 use pnet_macros_support::types::*;
 use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpPacket, TcpFlags};
 use pnet::packet::Packet;
@@ -91,7 +91,6 @@ struct TCB {
 
 impl TCB {
     fn new() -> TCB {
-        // let (tx, rx): (Sender<SegmentIpParams>, Receiver<SegmentIpParams>) = mpsc::channel();
         TCB {
             local_ip: "0.0.0.0".parse::<Ipv4Addr>().unwrap(),
             local_port: 0,
@@ -127,7 +126,8 @@ pub struct TCP {
     tc_blocks: HashMap<usize, TCB>,
     free_sockets: Vec<usize>,
     bound_ports: HashSet<(Ipv4Addr, u16)>,
-    fourtup_to_sock: HashMap<FourTup, usize>, // sock_to_sender: HashMap<usize, Sender<SegmentIpParams>>,
+    fourtup_to_sock: HashMap<FourTup, usize>,
+    sock_to_sender: HashMap<usize, MsQueue<SegmentIpParams>>,
 }
 
 #[derive(Hash, PartialEq, Eq)]
@@ -175,7 +175,8 @@ impl TCP {
             tc_blocks: HashMap::new(),
             free_sockets: Vec::new(),
             bound_ports: HashSet::new(),
-            fourtup_to_sock: HashMap::new(), // sock_to_sender: HashMap::new(),
+            fourtup_to_sock: HashMap::new(),
+            sock_to_sender: HashMap::new(),
         }
     }
 
@@ -202,7 +203,6 @@ impl TCP {
             None => self.tc_blocks.len(),
         };
         let tcb = TCB::new();
-        let (tx, rx): (Sender<SegmentIpParams>, Receiver<SegmentIpParams>) = mpsc::channel();
 
         // self.sock_to_sender.insert(sock_id, tx);
         match self.tc_blocks.insert(sock_id, tcb) {
@@ -467,14 +467,13 @@ pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>,
             };
             match tcp.fourtup_to_sock.get(&four_tup) {
                 Some(sock) => {
-                    Ok(())
-                    // match tcp.sock_to_sender.get(&sock) {
-                    //     Some(sender) => {
-                    //         // *(tcb.s_chann.write().unwrap()).send(tcp_pkt);
-                    //         Ok(())
-                    //     }
-                    //     None => Err("No matching sender found!".to_owned()),
-                    // }
+                    match tcp.sock_to_sender.get(&sock) {
+                        Some(sender) => {
+                            // *(tcb.s_chann.write().unwrap()).send(tcp_pkt);
+                            Ok(())
+                        }
+                        None => Err("No matching sender found!".to_owned()),
+                    }
                 }
                 None => Err("No corresponding socket found!".to_owned()),
             }
@@ -840,7 +839,6 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                 Some(socket) => socket,
                 None => tcp.tc_blocks.len(),
             };
-            let (tx, rx): (Sender<SegmentIpParams>, Receiver<SegmentIpParams>) = mpsc::channel();
             let tcb: TCB;
             {
                 let conns_q = &mut tcp.tc_blocks.get_mut(&parent_socket).unwrap().conns_q;

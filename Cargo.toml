@@ -9,6 +9,7 @@ syntex = "0.42.*"
 pnet_macros = "*"
 
 [dependencies]
+crossbeam = "*"
 log = "*"
 pnet = "*"
 pnet_macros_support = "*"
