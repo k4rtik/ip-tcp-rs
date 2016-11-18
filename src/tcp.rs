@@ -36,15 +36,16 @@ pub enum STATUS {
 }
 
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum CMD {
+#[derive(Debug)]
+pub enum CMD<'a> {
     UserCall,
     Timeout,
-    IpRecv,
+    IpRecv {msg: SegmentIpParams<'a>}
 }
 
-pub struct SegmentIpParams {
-    pub pkt: MutableTcpPacket<'static>,
+#[derive(Debug)]
+pub struct SegmentIpParams<'a> {
+    pub pkt: TcpPacket<'a>,
     pub params: ip::IpParams,
 }
 
@@ -121,13 +122,13 @@ impl TCB {
 }
 
 #[derive(Default)]
-pub struct TCP {
+pub struct TCP<'a> {
     // container of TCBs
     tc_blocks: HashMap<usize, TCB>,
     free_sockets: Vec<usize>,
     bound_ports: HashSet<(Ipv4Addr, u16)>,
     fourtup_to_sock: HashMap<FourTup, usize>,
-    sock_to_sender: HashMap<usize, MsQueue<SegmentIpParams>>,
+    sock_to_sender: HashMap<usize, MsQueue<SegmentIpParams<'a>>>,
 }
 
 #[derive(Hash, PartialEq, Eq)]
@@ -168,8 +169,8 @@ pub fn build_tcp_header(t_params: TcpParams,
     tcp_packet.set_checksum(cksum);
 }
 
-impl TCP {
-    pub fn new() -> TCP {
+impl<'a> TCP<'a> {
+    pub fn new() -> TCP<'a> {
         info!("Starting TCP...");
         TCP {
             tc_blocks: HashMap::new(),
@@ -450,20 +451,16 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
 
 
 pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>,
-             bytes: &[u8],
-             cmd: CMD,
-             ip_params: Option<ip::IpParams>)
+             cmd: CMD)
              -> Result<(), String> {
     let tcp = &mut *tcp_ctx.write().unwrap();
     match cmd {
-        CMD::IpRecv => {
-            let ip_params = ip_params.unwrap();
-            let tcp_pkt = TcpPacket::new(bytes).unwrap();
+        CMD::IpRecv{msg} => {
             let four_tup = FourTup {
-                src_ip: ip_params.src,
-                src_port: tcp_pkt.get_source(),
-                dst_ip: ip_params.dst,
-                dst_port: tcp_pkt.get_destination(),
+                src_ip: msg.params.src,
+                src_port: msg.pkt.get_source(),
+                dst_ip: msg.params.dst,
+                dst_port: msg.pkt.get_destination(),
             };
             match tcp.fourtup_to_sock.get(&four_tup) {
                 Some(sock) => {
