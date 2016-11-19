@@ -353,11 +353,7 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
     Ok(())
 }
 
-#[allow(unused_variables)]
-pub fn v_accept(tcp_ctx: &Arc<RwLock<TCP>>,
-                socket: usize,
-                addr: Option<Ipv4Addr>)
-                -> Result<usize, String> {
+pub fn v_accept(socket: usize, addr: Option<Ipv4Addr>) -> Result<usize, String> {
     thread::sleep(Duration::from_secs(100));
     Ok(0)
 }

@@ -125,10 +125,9 @@ pub fn accept_cmd(tcp_ctx: &Arc<RwLock<TCP>>, dl_ctx: &Arc<RwLock<DataLink>>, po
         }
     }
     let sock = s.unwrap();
-    // let tcp_ctx_clone = tcp_ctx.clone();
     thread::spawn(move || {
         loop {
-            match tcp::v_accept(&tcp_ctx, sock, None) {
+            match tcp::v_accept(sock, None) {
                 Ok(socket) => trace!("v_accept returned {}", socket),
                 Err(e) => error!("v_accept: {}", e),
             }
@@ -389,7 +388,7 @@ fn main() {
 
     let rip_ctx = Arc::new(RwLock::new(RipCtx::new(&ri)));
 
-    static tcp_ctx: &'static Arc<RwLock<TCP<'static>>> = &Arc::new(RwLock::new(TCP::new()));
+    let tcp_ctx: &Arc<RwLock<TCP>> = &Arc::new(RwLock::new(TCP::new()));
 
     let dl_ctx_clone = dl_ctx.clone();
     let rip_ctx_clone = rip_ctx.clone();
@@ -402,5 +401,5 @@ fn main() {
     let rip_ctx_clone = rip_ctx.clone();
     thread::spawn(move || rip::start_rip_module(&dl_ctx_clone, &rip_ctx_clone));
 
-    ip::start_ip_module(&dl_ctx, &rip_ctx, &tcp_ctx, dl_rx);
+    ip::start_ip_module(&dl_ctx, &rip_ctx, tcp_ctx, dl_rx);
 }
