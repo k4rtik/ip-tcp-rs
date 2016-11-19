@@ -1,7 +1,7 @@
 use pnet::packet::Packet;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use pnet::packet::ipv4::{self, MutableIpv4Packet, Ipv4Packet, Ipv4Option};
-use pnet::packet::tcp::{TcpPacket};
+use pnet::packet::tcp::TcpPacket;
 
 use std::io::{self, Write};
 use std::net::Ipv4Addr;
@@ -128,9 +128,9 @@ pub fn send(dl_ctx: &Arc<RwLock<DataLink>>,
 
 /// Any registered handler should conform to RECV interface described in RFC 791 pg. 32
 fn handle_packet<'a>(dl_ctx: &Arc<RwLock<DataLink>>,
-                 rip_ctx: &Arc<RwLock<RipCtx>>,
-                 tcp_ctx: Option<&Arc<RwLock<TCP>>>,
-                 pkt: MutableIpv4Packet<'a>) {
+                     rip_ctx: &Arc<RwLock<RipCtx>>,
+                     tcp_ctx: Option<&Arc<RwLock<TCP>>>,
+                     mut pkt: MutableIpv4Packet<'a>) {
     // TODO check for fragmentation
     if pkt.get_checksum() == ipv4::checksum(&pkt.to_immutable()) {
         let dst = pkt.get_destination();
@@ -144,16 +144,17 @@ fn handle_packet<'a>(dl_ctx: &Arc<RwLock<DataLink>>,
                     }
                     IpNextHeaderProtocol(6) => {
                         tcp::demux(tcp_ctx.unwrap(),
-                                   tcp::CMD::IpRecv { msg: tcp::SegmentIpParams {
-                                       pkt: TcpPacket::new(pkt.payload()).unwrap(),
-                                       params: IpParams {
-                                           src: pkt.get_source(),
-                                           dst: pkt.get_destination(),
-                                           len: get_ipv4_payload_length(&pkt.to_immutable()),
-                                           tos: 0, // XXX hardcoded, incorrect
-                                           opt: pkt.get_options(),
+                                   tcp::CMD::IpRecv {
+                                       msg: tcp::SegmentIpParams {
+                                           pkt: TcpPacket::new(pkt.payload()).unwrap(),
+                                           params: IpParams {
+                                               src: pkt.get_source(),
+                                               dst: pkt.get_destination(),
+                                               len: get_ipv4_payload_length(&pkt.to_immutable()),
+                                               tos: 0, // XXX hardcoded, incorrect
+                                               opt: pkt.get_options(),
+                                           },
                                        },
-				   }
                                    });
                     }
                     IpNextHeaderProtocol(200) => {
@@ -211,7 +212,7 @@ pub fn start_ip_module(dl_ctx: &Arc<RwLock<DataLink>>,
                        tcp_ctx: &Arc<RwLock<TCP>>,
                        rx: Receiver<MutableIpv4Packet>) {
     loop {
-        let mut pkt = rx.recv().unwrap();
+        let pkt = rx.recv().unwrap();
         handle_packet(dl_ctx, rip_ctx, Some(tcp_ctx), pkt);
     }
 }
