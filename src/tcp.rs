@@ -21,7 +21,7 @@ const TCP_PROT: u8 = 6;
 const TCP_MAX_WINDOW_SZ: usize = 65535;
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum STATUS {
+pub enum Status {
     Listen,
     SynSent,
     SynRcvd,
@@ -57,7 +57,7 @@ pub struct Socket {
     pub local_port: u16,
     pub dst_addr: Ipv4Addr,
     pub dst_port: u16,
-    pub status: STATUS,
+    pub status: Status,
 }
 
 #[derive(Debug)]
@@ -66,7 +66,7 @@ struct TCB {
     local_port: u16,
     remote_ip: Ipv4Addr,
     remote_port: u16,
-    state: STATUS,
+    state: Status,
 
     snd_buffer: Vec<u8>, // user's send buffer
     rcv_buffer: Vec<u8>, // user's receive buffer
@@ -98,7 +98,7 @@ impl TCB {
             local_port: 0,
             remote_ip: "0.0.0.0".parse::<Ipv4Addr>().unwrap(),
             remote_port: 0,
-            state: STATUS::Closed,
+            state: Status::Closed,
 
             snd_buffer: Vec::new(),
             rcv_buffer: Vec::new(),
@@ -267,7 +267,7 @@ impl<'a> TCP<'a> {
                     tcb.local_port = ip_port.1;
                     self.bound_ports.insert((tcb.local_ip, tcb.local_port));
                 }
-                tcb.state = STATUS::Listen;
+                tcb.state = Status::Listen;
                 info!("TCB state changed to LISTEN");
                 Ok(())
             }
@@ -300,7 +300,7 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
     let ip_params: ip::IpParams;
     let mut pkt_buf = vec![0u8; 20];
     if let Some(tcb) = (*tcp_ctx.write().unwrap()).tc_blocks.get_mut(&socket) {
-        if tcb.state == STATUS::Closed {
+        if tcb.state == Status::Closed {
             tcb.local_ip = local_ip;
             tcb.local_port = unused_port;
             tcb.remote_ip = dst_addr;
@@ -327,7 +327,7 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
 
             tcb.snd_una = tcb.iss;
             tcb.snd_nxt = tcb.iss + 1;
-            tcb.state = STATUS::SynSent;
+            tcb.state = Status::SynSent;
         } else {
             return Err(format!("EISCONN/EALREADY: TCB not in CLOSED state: {:?}", tcb));
         }
@@ -528,17 +528,17 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                 tcb.snd_wnd = pkt_window;
                 debug!("snd_wnd = {:?}", tcb.snd_wnd);
                 match tcb.state {
-                    STATUS::Closed => {
+                    Status::Closed => {
                         // Pg. 65 in RFC 793
                         info!("packet recvd on Closed TCB");
                         break; // discard segment, return
                     }
-                    STATUS::Listen => {
+                    Status::Listen => {
                         // Pg. 65-66 in RFC 793
                         info!("packet recvd on TCB in Listen State");
                         break; // discard segment, return
                     }
-                    STATUS::SynSent => {
+                    Status::SynSent => {
                         if pkt_flags & TcpFlags::ACK == TcpFlags::ACK {
                             // Pg. 66 in RFC 793
                             if pkt_ack <= tcb.iss || pkt_ack > tcb.snd_nxt {
@@ -555,7 +555,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                             tcb.snd_una = pkt_ack;
                             // TODO discard ack'ed segments from retransmit_q
                             if tcb.snd_una > tcb.iss {
-                                tcb.state = STATUS::Estab;
+                                tcb.state = Status::Estab;
                                 println!("v_connect() returned 0");
 
                                 t_params = TcpParams {
@@ -569,7 +569,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                                 build_tcp_header(t_params, lip, dip, None, &mut pkt_buf);
                                 should_send_packet = true;
                             } else {
-                                tcb.state = STATUS::SynRcvd;
+                                tcb.state = Status::SynRcvd;
                                 println!("switching from SynSent to SynRcvd");
 
                                 t_params = TcpParams {
@@ -637,7 +637,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                                     // Pg. 71 in RFC 793
                                     warn!("received SYN in the window, discarding TCB");
                                     println!("connection reset");
-                                    tcb.state = STATUS::Closed;
+                                    tcb.state = Status::Closed;
                                     mark_tcb_for_deletion = true;
                                     sock_to_be_deleted = *sock;
                                     break;
@@ -645,15 +645,15 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
 
                                 if pkt_flags & TcpFlags::ACK == TcpFlags::ACK {
                                     match tcb.state {
-                                        STATUS::SynRcvd => {
+                                        Status::SynRcvd => {
                                             // Pg. 72 in RFC 793
                                             if tcb.snd_una <= pkt_ack && pkt_ack <= tcb.snd_nxt {
-                                                tcb.state = STATUS::Estab;
+                                                tcb.state = Status::Estab;
                                                 println!("v_connect() returned 0");
                                             }
                                         }
-                                        STATUS::Estab | STATUS::FinWait1 | STATUS::FinWait2 |
-                                        STATUS::CloseWait | STATUS::Closing => {
+                                        Status::Estab | Status::FinWait1 | Status::FinWait2 |
+                                        Status::CloseWait | Status::Closing => {
                                             if tcb.snd_una < pkt_ack && pkt_ack <= tcb.snd_nxt {
                                                 tcb.snd_una = pkt_ack;
                                                 // TODO discard old segments from retransmit_q
@@ -693,17 +693,17 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
 
                                             // TODO more specific processing, see pg. 73
                                             match tcb.state {
-                                                // STATUS::FinWait1 => {}
-                                                // STATUS::FinWait2 => {}
-                                                // STATUS::CloseWait => {}
-                                                // STATUS::Closing => {}
+                                                // Status::FinWait1 => {}
+                                                // Status::FinWait2 => {}
+                                                // Status::CloseWait => {}
+                                                // Status::Closing => {}
                                                 _ => {}
                                             }
 
                                             // TODO payload processing, see pg. 74
                                             match tcb.state {
-                                                STATUS::Estab | STATUS::FinWait1 |
-                                                STATUS::FinWait2 => {
+                                                Status::Estab | Status::FinWait1 |
+                                                Status::FinWait2 => {
                                                     // TODO put the received segment in the right
                                                     // place in the buffer
                                                     if tcb.rcv_nxt - tcb.irs + seg_len <=
@@ -741,8 +741,8 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                                                 _ => {}
                                             }
                                         }
-                                        // STATUS::LastAck => {}
-                                        // STATUS::TimeWait => {}
+                                        // Status::LastAck => {}
+                                        // Status::TimeWait => {}
                                         _ => {}
                                     }
 
@@ -776,7 +776,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
         if !found_match {
             for (sock, tcb) in &mut tcp.tc_blocks {
                 // listening socket
-                if tcb.local_ip == lip && tcb.local_port == lp && tcb.state == STATUS::Listen {
+                if tcb.local_ip == lip && tcb.local_port == lp && tcb.state == Status::Listen {
                     debug!("found matching listening socket");
                     // new connection
                     if pkt_flags == TcpFlags::SYN {
@@ -791,7 +791,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                         ntcb.snd_wnd = pkt_window;
                         ntcb.snd_nxt = ntcb.iss + 1;
                         ntcb.snd_una = ntcb.iss;
-                        ntcb.state = STATUS::SynRcvd;
+                        ntcb.state = Status::SynRcvd;
 
                         tcp.bound_ports.insert((ntcb.local_ip, ntcb.local_port));
 
@@ -808,10 +808,10 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                         tcb.conns_q.push_back(ntcb);
                     } else if pkt_flags == TcpFlags::ACK {
                         for ntcb in &mut tcb.conns_q {
-                            if ntcb.state == STATUS::SynRcvd && ntcb.remote_ip == dip &&
+                            if ntcb.state == Status::SynRcvd && ntcb.remote_ip == dip &&
                                ntcb.remote_port == dp {
                                 // TODO check for correct ack
-                                ntcb.state = STATUS::Estab;
+                                ntcb.state = Status::Estab;
                                 parent_socket = *sock;
                                 need_new_tcb = true;
                                 break;
