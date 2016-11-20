@@ -155,7 +155,8 @@ fn handle_packet<'a>(dl_ctx: &Arc<RwLock<DataLink>>,
                                                opt: pkt.get_options(),
                                            },
                                        },
-                                   });
+                                   })
+                            .unwrap();
                     }
                     IpNextHeaderProtocol(200) => {
                         rip::pkt_handler(rip_ctx,

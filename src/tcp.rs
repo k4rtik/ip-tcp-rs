@@ -37,6 +37,7 @@ pub enum STATUS {
 
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum Message<'a> {
     UserCall,
     Timeout,
@@ -353,6 +354,7 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
     Ok(())
 }
 
+#[allow(unused_variables)]
 pub fn v_accept(socket: usize, addr: Option<Ipv4Addr>) -> Result<usize, String> {
     thread::sleep(Duration::from_secs(100));
     Ok(0)
@@ -459,7 +461,7 @@ pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, cmd: Message) -> Result<(), String> {
             match tcp.fourtup_to_sock.get(&four_tup) {
                 Some(sock) => {
                     match tcp.sock_to_sender.get(sock) {
-                        Some(sender) => {
+                        Some(_) => {
                             // *(tcb.s_chann.write().unwrap()).send(tcp_pkt);
                             Ok(())
                         }
@@ -475,6 +477,8 @@ pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, cmd: Message) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
+#[allow(cyclomatic_complexity)]
 pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                    rip_ctx: &Arc<RwLock<RipCtx>>,
                    tcp_ctx: &Arc<RwLock<TCP>>,
@@ -689,10 +693,10 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
 
                                             // TODO more specific processing, see pg. 73
                                             match tcb.state {
-                                                STATUS::FinWait1 => {}
-                                                STATUS::FinWait2 => {}
-                                                STATUS::CloseWait => {}
-                                                STATUS::Closing => {}
+                                                // STATUS::FinWait1 => {}
+                                                // STATUS::FinWait2 => {}
+                                                // STATUS::CloseWait => {}
+                                                // STATUS::Closing => {}
                                                 _ => {}
                                             }
 
@@ -737,8 +741,8 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                                                 _ => {}
                                             }
                                         }
-                                        STATUS::LastAck => {}
-                                        STATUS::TimeWait => {}
+                                        // STATUS::LastAck => {}
+                                        // STATUS::TimeWait => {}
                                         _ => {}
                                     }
 
