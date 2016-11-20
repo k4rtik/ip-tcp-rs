@@ -176,6 +176,20 @@ impl<'a> TCP<'a> {
             .collect()
     }
 
+    fn get_unused_ip_port(&self, dl_ctx: &Arc<RwLock<DataLink>>) -> Option<(Ipv4Addr, u16)> {
+        let ifaces = (*dl_ctx.read().unwrap()).get_interfaces();
+        for iface in &ifaces {
+            for port in 1024..65535 {
+                if !self.bound_ports.contains(&(iface.src, port)) {
+                    debug!("Bound ports: {:?}", self.bound_ports);
+                    debug!("Returning: {:?} {:?}", iface.src, port);
+                    return Some((iface.src, port));
+                }
+            }
+        }
+        None
+    }
+
     pub fn v_socket(&mut self) -> Result<usize, String> {
         trace!("Creating socket...");
         let sock_id = match self.free_sockets.pop() {
@@ -217,20 +231,6 @@ impl<'a> TCP<'a> {
             }
             None => Err("EBADF: sockfd is not a valid descriptor.".to_owned()),
         }
-    }
-
-    fn get_unused_ip_port(&self, dl_ctx: &Arc<RwLock<DataLink>>) -> Option<(Ipv4Addr, u16)> {
-        let ifaces = (*dl_ctx.read().unwrap()).get_interfaces();
-        for iface in &ifaces {
-            for port in 1024..65535 {
-                if !self.bound_ports.contains(&(iface.src, port)) {
-                    debug!("Bound ports: {:?}", self.bound_ports);
-                    debug!("Returning: {:?} {:?}", iface.src, port);
-                    return Some((iface.src, port));
-                }
-            }
-        }
-        None
     }
 
     pub fn v_listen(&mut self,
@@ -275,6 +275,7 @@ fn build_tcp_header(t_params: TcpParams,
     tcp_packet.set_checksum(cksum);
 }
 
+// TODO consider moving inside impl TCP
 pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
                  dl_ctx: &Arc<RwLock<DataLink>>,
                  rip_ctx: &Arc<RwLock<RipCtx>>,
@@ -354,11 +355,13 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
 }
 
 #[allow(unused_variables)]
+// TODO consider moving inside one of impl TCP or TCB
 pub fn v_accept(socket: usize, addr: Option<Ipv4Addr>) -> Result<usize, String> {
     thread::sleep(Duration::from_secs(100));
     Ok(0)
 }
 
+// TODO consider moving inside one of impl TCP or TCB
 pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: bool) -> usize {
     let tcp = &mut *tcp_ctx.write().unwrap();
     match tcp.tc_blocks.get_mut(&socket) {
@@ -382,6 +385,7 @@ pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: boo
     }
 }
 
+// TODO consider moving inside one of impl TCP or TCB
 pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
                dl_ctx: &Arc<RwLock<DataLink>>,
                rip_ctx: &Arc<RwLock<RipCtx>>,
@@ -446,7 +450,7 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
     Ok(message.len())
 }
 
-
+// TODO consider moving inside impl TCP
 pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, cmd: Message) -> Result<(), String> {
     let tcp = &mut *tcp_ctx.write().unwrap();
     match cmd {
