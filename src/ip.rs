@@ -211,9 +211,10 @@ fn handle_packet<'a>(dl_ctx: &Arc<RwLock<DataLink>>,
 pub fn start_ip_module(dl_ctx: &Arc<RwLock<DataLink>>,
                        rip_ctx: &Arc<RwLock<RipCtx>>,
                        tcp_ctx: &Arc<RwLock<TCP>>,
-                       rx: Receiver<MutableIpv4Packet>) {
+                       rx: Receiver<Vec<u8>>) {
     loop {
-        let pkt = rx.recv().unwrap();
+        let mut pkt_buf = rx.recv().unwrap();
+        let pkt = MutableIpv4Packet::new(&mut pkt_buf).unwrap();
         handle_packet(dl_ctx, rip_ctx, Some(tcp_ctx), pkt);
     }
 }
