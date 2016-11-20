@@ -37,7 +37,7 @@ pub enum STATUS {
 
 
 #[derive(Debug)]
-pub enum CMD<'a> {
+pub enum Message<'a> {
     UserCall,
     Timeout,
     IpRecv { msg: SegmentIpParams<'a> },
@@ -446,10 +446,10 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
 }
 
 
-pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, cmd: CMD) -> Result<(), String> {
+pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, cmd: Message) -> Result<(), String> {
     let tcp = &mut *tcp_ctx.write().unwrap();
     match cmd {
-        CMD::IpRecv { msg } => {
+        Message::IpRecv { msg } => {
             let four_tup = FourTup {
                 src_ip: msg.params.src,
                 src_port: msg.pkt.get_source(),
@@ -469,7 +469,7 @@ pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, cmd: CMD) -> Result<(), String> {
                 None => Err("No corresponding socket found!".to_owned()),
             }
         }
-        CMD::UserCall => Ok(()),
+        Message::UserCall => Ok(()),
 
         _ => Err("Unrecognized command!".to_owned()),
     }

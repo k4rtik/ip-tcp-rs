@@ -144,7 +144,7 @@ fn handle_packet<'a>(dl_ctx: &Arc<RwLock<DataLink>>,
                     }
                     IpNextHeaderProtocol(6) => {
                         tcp::demux(tcp_ctx.unwrap(),
-                                   tcp::CMD::IpRecv {
+                                   tcp::Message::IpRecv {
                                        msg: tcp::SegmentIpParams {
                                            pkt: TcpPacket::new(pkt.payload()).unwrap(),
                                            params: IpParams {
