@@ -20,6 +20,30 @@ use rip::{self, RipCtx};
 const TCP_PROT: u8 = 6;
 const TCP_MAX_WINDOW_SZ: usize = 65535;
 
+#[derive(Default)]
+pub struct TCP<'a> {
+    // container of TCBs
+    tc_blocks: HashMap<usize, TCB>,
+    free_sockets: Vec<usize>,
+    bound_ports: HashSet<(Ipv4Addr, u16)>,
+    fourtup_to_sock: HashMap<FourTup, usize>,
+    sock_to_sender: HashMap<usize, MsQueue<SegmentIpParams<'a>>>,
+}
+
+#[derive(Hash, PartialEq, Eq)]
+struct FourTup {
+    src_ip: Ipv4Addr,
+    src_port: u16,
+    dst_ip: Ipv4Addr,
+    dst_port: u16,
+}
+
+#[derive(Debug)]
+pub struct SegmentIpParams<'a> {
+    pub pkt: TcpPacket<'a>,
+    pub params: ip::IpParams,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Status {
     Listen,
@@ -33,31 +57,6 @@ pub enum Status {
     LastAck,
     TimeWait,
     Closed,
-}
-
-
-#[derive(Debug)]
-#[allow(dead_code)]
-pub enum Message<'a> {
-    UserCall,
-    Timeout,
-    IpRecv { msg: SegmentIpParams<'a> },
-}
-
-#[derive(Debug)]
-pub struct SegmentIpParams<'a> {
-    pub pkt: TcpPacket<'a>,
-    pub params: ip::IpParams,
-}
-
-#[derive(Debug)]
-pub struct Socket {
-    pub socket_id: usize,
-    pub local_addr: Ipv4Addr,
-    pub local_port: u16,
-    pub dst_addr: Ipv4Addr,
-    pub dst_port: u16,
-    pub status: Status,
 }
 
 #[derive(Debug)]
@@ -122,52 +121,31 @@ impl TCB {
     }
 }
 
-#[derive(Default)]
-pub struct TCP<'a> {
-    // container of TCBs
-    tc_blocks: HashMap<usize, TCB>,
-    free_sockets: Vec<usize>,
-    bound_ports: HashSet<(Ipv4Addr, u16)>,
-    fourtup_to_sock: HashMap<FourTup, usize>,
-    sock_to_sender: HashMap<usize, MsQueue<SegmentIpParams<'a>>>,
+#[derive(Debug)]
+#[allow(dead_code)]
+pub enum Message<'a> {
+    UserCall,
+    Timeout,
+    IpRecv { msg: SegmentIpParams<'a> },
 }
 
-#[derive(Hash, PartialEq, Eq)]
-pub struct FourTup {
-    pub src_ip: Ipv4Addr,
-    pub src_port: u16,
-    pub dst_ip: Ipv4Addr,
+#[derive(Debug)]
+pub struct Socket {
+    pub socket_id: usize,
+    pub local_addr: Ipv4Addr,
+    pub local_port: u16,
+    pub dst_addr: Ipv4Addr,
     pub dst_port: u16,
+    pub status: Status,
 }
 
-pub struct TcpParams {
+struct TcpParams {
     src_port: u16,
     dst_port: u16,
     seq_num: u32,
     ack_num: u32,
     flags: u9be,
     window: u16be,
-}
-
-pub fn build_tcp_header(t_params: TcpParams,
-                        src_addr: Ipv4Addr,
-                        dst_addr: Ipv4Addr,
-                        payload: Option<&[u8]>,
-                        buff: &mut [u8]) {
-    trace!("Building TCP packet...");
-    let mut tcp_packet = MutableTcpPacket::new(buff).unwrap();
-    tcp_packet.set_source(t_params.src_port);
-    tcp_packet.set_destination(t_params.dst_port);
-    tcp_packet.set_sequence(t_params.seq_num);
-    tcp_packet.set_acknowledgement(t_params.ack_num);
-    tcp_packet.set_data_offset((TcpPacket::minimum_packet_size() / 4) as u4); // number of 32-bit words in header
-    tcp_packet.set_flags(t_params.flags);
-    tcp_packet.set_window(t_params.window);
-    if let Some(payload) = payload {
-        tcp_packet.set_payload(payload)
-    }
-    let cksum = ipv4_checksum(&tcp_packet.to_immutable(), src_addr, dst_addr);
-    tcp_packet.set_checksum(cksum);
 }
 
 impl<'a> TCP<'a> {
@@ -274,6 +252,27 @@ impl<'a> TCP<'a> {
             None => Err("No TCB associated with this connection!".to_owned()),
         }
     }
+}
+
+fn build_tcp_header(t_params: TcpParams,
+                    src_addr: Ipv4Addr,
+                    dst_addr: Ipv4Addr,
+                    payload: Option<&[u8]>,
+                    buff: &mut [u8]) {
+    trace!("Building TCP packet...");
+    let mut tcp_packet = MutableTcpPacket::new(buff).unwrap();
+    tcp_packet.set_source(t_params.src_port);
+    tcp_packet.set_destination(t_params.dst_port);
+    tcp_packet.set_sequence(t_params.seq_num);
+    tcp_packet.set_acknowledgement(t_params.ack_num);
+    tcp_packet.set_data_offset((TcpPacket::minimum_packet_size() / 4) as u4); // number of 32-bit words in header
+    tcp_packet.set_flags(t_params.flags);
+    tcp_packet.set_window(t_params.window);
+    if let Some(payload) = payload {
+        tcp_packet.set_payload(payload)
+    }
+    let cksum = ipv4_checksum(&tcp_packet.to_immutable(), src_addr, dst_addr);
+    tcp_packet.set_checksum(cksum);
 }
 
 pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
