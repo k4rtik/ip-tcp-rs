@@ -103,6 +103,19 @@ fn print_sockets(sockets: Vec<Socket>) {
     }
 }
 
+
+pub fn print_window_sz(tcp_ctx: &Arc<RwLock<TCP>>, sock: usize) {
+    let tcp = &mut (*tcp_ctx.write().unwrap());
+    match tcp.get_snd_wnd_sz(sock) {
+        Ok(sz) => println!("Send Window Size: {}", sz),
+        Err(e) => {}
+    }
+    match tcp.get_rcv_wnd_sz(sock) {
+        Ok(sz) => println!("Recv Window Size: {}", sz),
+        Err(e) => {}
+    }
+}
+
 pub fn accept_cmd(tcp_ctx: &Arc<RwLock<TCP>>, dl_ctx: &Arc<RwLock<DataLink>>, port: u16) {
     let s = (*tcp_ctx.write().unwrap()).v_socket();
     // TODO think if this scoping is necessary to prevent deadlock?
@@ -309,9 +322,10 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                     }
                     "window" => {
                         if cmd_vec.len() != 2 {
-                            println!("Missing parameters!");
+                            println!("Missing socket number!");
                         } else {
-                            println!("Window size is...");
+                            let socket = cmd_vec[1].parse::<usize>().unwrap();
+                            print_window_sz(&tcp_ctx, socket);
                         }
                     }
                     "shutdown" => {

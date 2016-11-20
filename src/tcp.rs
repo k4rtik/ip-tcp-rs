@@ -176,6 +176,20 @@ impl<'a> TCP<'a> {
             .collect()
     }
 
+    pub fn get_snd_wnd_sz(&self, sock: usize) -> Result<u16, String> {
+        match self.tc_blocks.get(&sock) {
+            Some(tcb) => Ok(tcb.snd_wnd),
+            None => Err("No matching TCB found!".to_owned()),
+        }
+    }
+
+    pub fn get_rcv_wnd_sz(&self, sock: usize) -> Result<u16, String> {
+        match self.tc_blocks.get(&sock) {
+            Some(tcb) => Ok(tcb.rcv_wnd),
+            None => Err("No matching TCB found!".to_owned()),
+        }
+    }
+
     fn get_unused_ip_port(&self, dl_ctx: &Arc<RwLock<DataLink>>) -> Option<(Ipv4Addr, u16)> {
         let ifaces = (*dl_ctx.read().unwrap()).get_interfaces();
         for iface in &ifaces {
