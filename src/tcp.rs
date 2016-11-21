@@ -23,7 +23,7 @@ const TCP_MAX_WINDOW_SZ: usize = 65535;
 #[derive(Default)]
 pub struct TCP {
     // container of TCBs
-    tc_blocks: HashMap<usize, TCB>,
+    tc_blocks: HashMap<usize, Arc<RwLock<TCB>>>,
     free_sockets: Vec<usize>,
     bound_ports: HashSet<(Ipv4Addr, u16)>,
     fourtup_to_sock: HashMap<FourTup, usize>,
@@ -98,7 +98,7 @@ struct TCB {
     qr: Option<Arc<MsQueue<Message>>>,
 
     // only for LISTEN
-    conns_q: VecDeque<TCB>,
+    conns_map: HashMap<(Ipv4Addr, u16), TCB>,
 }
 
 impl TCB {
@@ -129,7 +129,7 @@ impl TCB {
 
             qr: qr,
 
-            conns_q: VecDeque::new(),
+            conns_map: HashMap::new(),
         }
     }
 }
@@ -169,6 +169,7 @@ impl TCP {
         self.tc_blocks
             .iter()
             .map(|(sock, tcb)| {
+                let tcb = &(*tcb.read().unwrap());
                 Socket {
                     socket_id: *sock,
                     local_addr: tcb.local_ip,
@@ -183,14 +184,14 @@ impl TCP {
 
     pub fn get_snd_wnd_sz(&self, sock: usize) -> Result<u16, String> {
         match self.tc_blocks.get(&sock) {
-            Some(tcb) => Ok(tcb.snd_wnd),
+            Some(tcb) => Ok((*tcb.read().unwrap()).snd_wnd),
             None => Err("No matching TCB found!".to_owned()),
         }
     }
 
     pub fn get_rcv_wnd_sz(&self, sock: usize) -> Result<u16, String> {
         match self.tc_blocks.get(&sock) {
-            Some(tcb) => Ok(tcb.rcv_wnd),
+            Some(tcb) => Ok((*tcb.read().unwrap()).rcv_wnd),
             None => Err("No matching TCB found!".to_owned()),
         }
     }
@@ -217,7 +218,7 @@ impl TCP {
         };
 
         self.sock_to_sender.insert(sock_id, Arc::new(MsQueue::new()));
-        let tcb = TCB::new(Some(self.sock_to_sender[&sock_id].clone()));
+        let tcb = Arc::new(RwLock::new(TCB::new(Some(self.sock_to_sender[&sock_id].clone()))));
 
         match self.tc_blocks.insert(sock_id, tcb) {
             Some(v) => {
@@ -235,8 +236,9 @@ impl TCP {
                   port: u16)
                   -> Result<(), String> {
         info!("Binding to IP {:?}, port {}", addr, port);
-        match self.tc_blocks.get_mut(&socket) {
+        match self.tc_blocks.get(&socket) {
             Some(tcb) => {
+                let tcb = &mut (*tcb.write().unwrap());
                 let ifaces = (*dl_ctx.read().unwrap()).get_interfaces();
                 for iface in ifaces {
                     if !self.bound_ports.contains(&(iface.src, port)) {
@@ -258,8 +260,9 @@ impl TCP {
                     socket: usize)
                     -> Result<(), String> {
         let ip_port = self.get_unused_ip_port(dl_ctx).unwrap();
-        match self.tc_blocks.get_mut(&socket) {
+        match self.tc_blocks.get(&socket) {
             Some(tcb) => {
+                let tcb = &mut (*tcb.write().unwrap());
                 if tcb.local_port == 0 {
                     tcb.local_ip = ip_port.0;
                     tcb.local_port = ip_port.1;
@@ -319,7 +322,8 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
     let t_params: TcpParams;
     let ip_params: ip::IpParams;
     let mut pkt_buf = vec![0u8; 20];
-    if let Some(tcb) = (*tcp_ctx.write().unwrap()).tc_blocks.get_mut(&socket) {
+    if let Some(tcb) = (*tcp_ctx.read().unwrap()).tc_blocks.get(&socket) {
+        let tcb = &mut (*tcb.write().unwrap());
         if tcb.state == Status::Closed {
             tcb.local_ip = local_ip;
             tcb.local_port = unused_port;
@@ -384,8 +388,9 @@ pub fn v_accept(socket: usize, addr: Option<Ipv4Addr>) -> Result<usize, String> 
 // TODO consider moving inside one of impl TCP or TCB
 pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: bool) -> usize {
     let tcp = &mut *tcp_ctx.write().unwrap();
-    match tcp.tc_blocks.get_mut(&socket) {
+    match tcp.tc_blocks.get(&socket) {
         Some(tcb) => {
+            let tcb = &mut (*tcb.write().unwrap());
             if (tcb.read_nxt + tcb.irs + size as u32) < tcb.rcv_nxt {
                 let i = tcb.read_nxt as usize;
                 println!("payload: {}",
@@ -419,8 +424,9 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
 
     {
         let tcp = &mut *tcp_ctx.write().unwrap();
-        match tcp.tc_blocks.get_mut(&socket) {
+        match tcp.tc_blocks.get(&socket) {
             Some(tcb) => {
+                let tcb = &mut (*tcb.write().unwrap());
                 if tcb.snd_wnd > ((tcb.snd_nxt - tcb.iss + message.len() as u32) as u16) {
                     t_params = TcpParams {
                         src_port: tcb.local_port,
@@ -505,6 +511,7 @@ pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, pkt: SegmentIpParams) -> Result<(), Str
             }
             match tcp.fourtup_to_sock.get(&four_tup) {
                 Some(sock) => {
+                    // TODO make sure it is in Listen state
                     match tcp.sock_to_sender.get(sock) {
                         Some(qs) => {
                             qs.push(Message::IpRecv { pkt: pkt });
@@ -519,73 +526,133 @@ pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, pkt: SegmentIpParams) -> Result<(), Str
     }
 }
 
-#[allow(dead_code)]
 #[allow(unknown_lints)]
 #[allow(cyclomatic_complexity)]
-pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
-                   rip_ctx: &Arc<RwLock<RipCtx>>,
-                   tcp_ctx: &Arc<RwLock<TCP>>,
-                   tcp_pkt: &[u8],
-                   ip_params: ip::IpParams) {
-    let pkt = TcpPacket::new(tcp_pkt).unwrap();
-    trace!("{:?}", pkt);
-    // TODO verify checksum
-    let pkt_seq_num = pkt.get_sequence();
-    let pkt_ack = pkt.get_acknowledgement();
-    let pkt_flags = pkt.get_flags();
-    let pkt_window = pkt.get_window();
+fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
+                      qr: Arc<MsQueue<Message>>,
+                      dl_ctx: Arc<RwLock<DataLink>>,
+                      rip_ctx: Arc<RwLock<RipCtx>>,
+                      tcp_ctx: Arc<RwLock<TCP>>) {
+    use self::Message::*;
+    loop {
+        // blocks
+        let msg = qr.pop();
+        match msg {
+            UserCall | Timeout => {}
+            IpRecv { pkt } => {
+                let segment = pkt.pkt_buf;
+                let ip_params = pkt.params;
+                let pkt = TcpPacket::new(&segment).unwrap();
+                trace!("{:?}", pkt);
+                // TODO verify checksum
+                let pkt_seq_num = pkt.get_sequence();
+                let pkt_ack = pkt.get_acknowledgement();
+                let pkt_flags = pkt.get_flags();
+                let pkt_window = pkt.get_window();
 
-    let pkt_size = ip_params.len;
+                let pkt_size = ip_params.len;
 
-    let (lip, lp, dip, dp) =
-        (ip_params.dst, pkt.get_destination(), ip_params.src, pkt.get_source());
+                let (lip, lp, dip, dp) =
+                    (ip_params.dst, pkt.get_destination(), ip_params.src, pkt.get_source());
 
-    let mut found_match = false;
+                let mut should_send_packet = false;
 
-    let mut need_new_tcb = false;
-    let mut should_send_packet = false;
-    let mut parent_socket = 0;
+                // let mut mark_tcb_for_deletion = false;
+                // let mut sock_to_be_deleted = 0;
 
-    let mut mark_tcb_for_deletion = false;
-    let mut sock_to_be_deleted = 0;
+                let mut t_params: TcpParams;
+                let pkt_sz = MutableTcpPacket::minimum_packet_size();
+                let ip_params = ip::IpParams {
+                    src: lip,
+                    dst: dip,
+                    len: pkt_sz,
+                    tos: 0,
+                    opt: vec![],
+                };
+                let mut pkt_buf = vec![0u8; pkt_sz];
 
-    let mut t_params: TcpParams;
-    let pkt_sz = MutableTcpPacket::minimum_packet_size();
-    let ip_params = ip::IpParams {
-        src: lip,
-        dst: dip,
-        len: pkt_sz,
-        tos: 0,
-        opt: vec![],
-    };
-    let mut pkt_buf = vec![0u8; pkt_sz];
-
-    {
-        let tcp = &mut *tcp_ctx.write().unwrap();
-        for (sock, tcb) in &mut tcp.tc_blocks {
-            // regular socket
-            if tcb.local_ip == lip && tcb.local_port == lp && tcb.remote_ip == dip &&
-               tcb.remote_port == dp {
-                found_match = true;
-                debug!("found matching socket");
+                let tcb = &mut (*tcb_ref.write().unwrap());
+                // regular socket
                 tcb.snd_wnd = pkt_window;
                 debug!("snd_wnd = {:?}", tcb.snd_wnd);
                 match tcb.state {
                     Status::Closed => {
                         // Pg. 65 in RFC 793
                         info!("packet recvd on Closed TCB");
-                        break; // discard segment, return
                     }
                     Status::Listen => {
                         // Pg. 65-66 in RFC 793
                         info!("packet recvd on TCB in Listen State");
-                        break; // discard segment, return
+                        // TODO XXX make sure listener is handled well here
+                        debug!("found matching listening socket");
+                        // new connection
+                        if pkt_flags == TcpFlags::SYN {
+                            let mut ntcb = TCB::new(None);
+                            ntcb.local_ip = lip;
+                            ntcb.local_port = lp;
+                            ntcb.remote_ip = dip;
+                            ntcb.remote_port = dp;
+
+                            ntcb.rcv_nxt = pkt_seq_num + 1;
+                            ntcb.irs = pkt_seq_num;
+                            ntcb.snd_wnd = pkt_window;
+                            ntcb.snd_nxt = ntcb.iss + 1;
+                            ntcb.snd_una = ntcb.iss;
+                            ntcb.state = Status::SynRcvd;
+
+                            {
+                                let tcp = &mut (*tcp_ctx.write().unwrap());
+                                tcp.bound_ports.insert((ntcb.local_ip, ntcb.local_port));
+                            }
+
+                            t_params = TcpParams {
+                                src_port: tcb.local_port,
+                                dst_port: ntcb.remote_port,
+                                seq_num: ntcb.iss,
+                                ack_num: ntcb.rcv_nxt,
+                                flags: TcpFlags::SYN | TcpFlags::ACK,
+                                window: ntcb.rcv_wnd,
+                            };
+                            build_tcp_header(t_params, lip, dip, None, &mut pkt_buf);
+                            should_send_packet = true;
+                            tcb.conns_map.insert((dip, dp), ntcb);
+                        } else if pkt_flags == TcpFlags::ACK {
+                            // TODO consider combining the two if lets
+                            if let Some(ntcb) = tcb.conns_map.get_mut(&(dip, dp)) {
+                                if ntcb.state == Status::SynRcvd {
+                                    ntcb.state = Status::Estab;
+                                }
+                            }
+                            if let Some(ntcb) = tcb.conns_map.remove(&(dip, dp)) {
+                                // TODO check for correct ack
+                                if ntcb.state == Status::Estab {
+                                    let tcp = &mut (*tcp_ctx.write().unwrap());
+                                    let sock_id = match tcp.free_sockets.pop() {
+                                        Some(socket) => socket,
+                                        None => tcp.tc_blocks.len(),
+                                    };
+                                    tcp.sock_to_sender
+                                        .insert(sock_id, Arc::new(MsQueue::new()));
+                                    let tcb = Arc::new(RwLock::new(TCB {
+                                        qr: Some(tcp.sock_to_sender[&sock_id].clone()),
+                                        ..ntcb
+                                    }));
+                                    match tcp.tc_blocks.insert(sock_id, tcb) {
+                                        Some(v) => {
+                                            warn!("overwrote exisiting value: {:?}", v);
+                                        }
+                                        None => {
+                                            println!("v_accept on socket returned {}", sock_id);
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     Status::SynSent => {
                         if pkt_flags & TcpFlags::ACK == TcpFlags::ACK {
                             // Pg. 66 in RFC 793
                             if pkt_ack <= tcb.iss || pkt_ack > tcb.snd_nxt {
-                                break; // discard segment, return
                             } else if tcb.snd_una <= pkt_ack && pkt_ack < tcb.snd_nxt {
                                 info!("acceptable ACK");
                             }
@@ -627,7 +694,6 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                                 should_send_packet = true;
                             }
                         } else {
-                            break; // discard segment, return
                         }
                     }
                     _ => {
@@ -648,7 +714,6 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                                 };
                                 build_tcp_header(t_params, lip, dip, None, &mut pkt_buf);
                                 should_send_packet = true;
-                                break;
                             } else if seg_len == 0 && pkt_seq_num == tcb.rcv_nxt {
                                 info!("received packet is probably an ACK");
                             } else {
@@ -663,7 +728,6 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                                 };
                                 build_tcp_header(t_params, lip, dip, None, &mut pkt_buf);
                                 should_send_packet = true;
-                                break;
                             }
                             // tcb.rcv_wnd > 0
                         } else if seg_len == 0 && tcb.rcv_nxt <= pkt_seq_num &&
@@ -681,9 +745,13 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                                     warn!("received SYN in the window, discarding TCB");
                                     println!("connection reset");
                                     tcb.state = Status::Closed;
-                                    mark_tcb_for_deletion = true;
-                                    sock_to_be_deleted = *sock;
-                                    break;
+                                    {
+                                        let tcp = &mut (*tcp_ctx.write().unwrap());
+                                        // TODO think about exiting the thread here
+                                        // tcp.tc_blocks.remove(&sock_to_be_deleted).unwrap();
+                                        // tcp.free_sockets.push(sock_to_be_deleted);
+                                        tcp.bound_ports.remove(&(tcb.local_ip, tcb.local_port));
+                                    }
                                 }
 
                                 if pkt_flags & TcpFlags::ACK == TcpFlags::ACK {
@@ -713,7 +781,6 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                                                 }
                                             } else if pkt_ack < tcb.snd_una {
                                                 info!("ignoring duplicate ACK");
-                                                break;
                                             } else if pkt_ack > tcb.snd_nxt {
                                                 warn!("Dropping segment, received too early, sending ACK");
                                                 // Send ACK
@@ -731,7 +798,6 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                                                                  None,
                                                                  &mut pkt_buf);
                                                 should_send_packet = true;
-                                                break;
                                             }
 
                                             // TODO more specific processing, see pg. 73
@@ -792,7 +858,6 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
 
                                 } else {
                                     warn!("Dropping packet, no ACK flag set");
-                                    break;
                                 }
                             } else {
                                 // TODO non-ideal case, ie, might need trimming
@@ -812,103 +877,21 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                         }
                     }
                 }
-                break;
-            }
-        }
 
-        if !found_match {
-            for (sock, tcb) in &mut tcp.tc_blocks {
-                // listening socket
-                if tcb.local_ip == lip && tcb.local_port == lp && tcb.state == Status::Listen {
-                    debug!("found matching listening socket");
-                    // new connection
-                    if pkt_flags == TcpFlags::SYN {
-                        let mut ntcb = TCB::new(None);
-                        ntcb.local_ip = lip;
-                        ntcb.local_port = lp;
-                        ntcb.remote_ip = dip;
-                        ntcb.remote_port = dp;
-
-                        ntcb.rcv_nxt = pkt_seq_num + 1;
-                        ntcb.irs = pkt_seq_num;
-                        ntcb.snd_wnd = pkt_window;
-                        ntcb.snd_nxt = ntcb.iss + 1;
-                        ntcb.snd_una = ntcb.iss;
-                        ntcb.state = Status::SynRcvd;
-
-                        tcp.bound_ports.insert((ntcb.local_ip, ntcb.local_port));
-
-                        t_params = TcpParams {
-                            src_port: tcb.local_port,
-                            dst_port: ntcb.remote_port,
-                            seq_num: ntcb.iss,
-                            ack_num: ntcb.rcv_nxt,
-                            flags: TcpFlags::SYN | TcpFlags::ACK,
-                            window: ntcb.rcv_wnd,
-                        };
-                        build_tcp_header(t_params, lip, dip, None, &mut pkt_buf);
-                        should_send_packet = true;
-                        tcb.conns_q.push_back(ntcb);
-                    } else if pkt_flags == TcpFlags::ACK {
-                        for ntcb in &mut tcb.conns_q {
-                            if ntcb.state == Status::SynRcvd && ntcb.remote_ip == dip &&
-                               ntcb.remote_port == dp {
-                                // TODO check for correct ack
-                                ntcb.state = Status::Estab;
-                                parent_socket = *sock;
-                                need_new_tcb = true;
-                                break;
-                            }
-                        }
-                    }
-                    break;
+                if should_send_packet {
+                    let segment = TcpPacket::new(&pkt_buf[..]).unwrap();
+                    ip::send(&dl_ctx,
+                             Some(&rip_ctx),
+                             Some(&tcp_ctx),
+                             ip_params,
+                             TCP_PROT,
+                             rip::INFINITY,
+                             segment.packet().to_vec(),
+                             0,
+                             true)
+                        .unwrap();
                 }
             }
         }
-
-        if need_new_tcb {
-            // only when accepting a new connection
-            let sock_id = match tcp.free_sockets.pop() {
-                Some(socket) => socket,
-                None => tcp.tc_blocks.len(),
-            };
-            tcp.sock_to_sender.insert(sock_id, Arc::new(MsQueue::new()));
-            let tcb: TCB;
-            {
-                let conns_q = &mut tcp.tc_blocks.get_mut(&parent_socket).unwrap().conns_q;
-                tcb = TCB {
-                    qr: Some(tcp.sock_to_sender[&sock_id].clone()),
-                    ..conns_q.pop_front().unwrap()
-                };
-            }
-            match tcp.tc_blocks.insert(sock_id, tcb) {
-                Some(v) => {
-                    warn!("overwrote exisiting value: {:?}", v);
-                }
-                None => {
-                    println!("v_accept on socket {} returned {}", parent_socket, sock_id);
-                }
-            }
-        }
-
-        if mark_tcb_for_deletion {
-            let tcb = tcp.tc_blocks.remove(&sock_to_be_deleted).unwrap();
-            tcp.free_sockets.push(sock_to_be_deleted);
-            tcp.bound_ports.remove(&(tcb.local_ip, tcb.local_port));
-        }
-    }
-
-    if should_send_packet {
-        let segment = TcpPacket::new(&pkt_buf[..]).unwrap();
-        ip::send(dl_ctx,
-                 Some(rip_ctx),
-                 Some(tcp_ctx),
-                 ip_params,
-                 TCP_PROT,
-                 rip::INFINITY,
-                 segment.packet().to_vec(),
-                 0,
-                 true)
-            .unwrap();
     }
 }
