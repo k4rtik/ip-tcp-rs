@@ -106,13 +106,11 @@ fn print_sockets(sockets: Vec<Socket>) {
 
 pub fn print_window_sz(tcp_ctx: &Arc<RwLock<TCP>>, sock: usize) {
     let tcp = &mut (*tcp_ctx.write().unwrap());
-    match tcp.get_snd_wnd_sz(sock) {
-        Ok(sz) => println!("Send Window Size: {}", sz),
-        Err(e) => {}
+    if let Ok(sz) = tcp.get_snd_wnd_sz(sock) {
+        println!("Send Window Size: {}", sz);
     }
-    match tcp.get_rcv_wnd_sz(sock) {
-        Ok(sz) => println!("Recv Window Size: {}", sz),
-        Err(e) => {}
+    if let Ok(sz) = tcp.get_rcv_wnd_sz(sock) {
+        println!("Recv Window Size: {}", sz);
     }
 }
 

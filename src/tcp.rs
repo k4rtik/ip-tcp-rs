@@ -495,6 +495,7 @@ pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, cmd: Message) -> Result<(), String> {
 }
 
 #[allow(dead_code)]
+#[allow(unknown_lints)]
 #[allow(cyclomatic_complexity)]
 pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                    rip_ctx: &Arc<RwLock<RipCtx>>,
