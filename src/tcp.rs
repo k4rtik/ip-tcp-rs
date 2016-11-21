@@ -473,7 +473,7 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
 // TODO consider moving inside impl TCP
 pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, pkt: SegmentIpParams) -> Result<(), String> {
     let tcp = &mut *tcp_ctx.write().unwrap();
-    let four_tup: FourTup;
+    let mut four_tup: FourTup;
     {
         let segment = TcpPacket::new(&pkt.pkt_buf).unwrap();
         four_tup = FourTup {
@@ -493,7 +493,29 @@ pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, pkt: SegmentIpParams) -> Result<(), Str
                 None => Err("No matching sender found!".to_owned()),
             }
         }
-        None => Err("No corresponding socket found!".to_owned()),
+        None => {
+            {
+                let segment = TcpPacket::new(&pkt.pkt_buf).unwrap();
+                four_tup = FourTup {
+                    src_ip: pkt.params.src,
+                    src_port: segment.get_source(),
+                    dst_ip: Ipv4Addr::new(0, 0, 0, 0),
+                    dst_port: 0,
+                };
+            }
+            match tcp.fourtup_to_sock.get(&four_tup) {
+                Some(sock) => {
+                    match tcp.sock_to_sender.get(sock) {
+                        Some(qs) => {
+                            qs.push(Message::IpRecv { pkt: pkt });
+                            Ok(())
+                        }
+                        None => Err("No matching TCB found!".to_owned()),
+                    }
+                }
+                None => Err("No matching sock found!".to_owned()),
+            }
+        }
     }
 }
 
