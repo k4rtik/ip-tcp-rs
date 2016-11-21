@@ -210,25 +210,6 @@ impl TCP {
         None
     }
 
-    pub fn v_socket(&mut self) -> Result<usize, String> {
-        trace!("Creating socket...");
-        let sock_id = match self.free_sockets.pop() {
-            Some(socket) => socket,
-            None => self.tc_blocks.len(),
-        };
-
-        self.sock_to_sender.insert(sock_id, Arc::new(MsQueue::new()));
-        let tcb = Arc::new(RwLock::new(TCB::new(Some(self.sock_to_sender[&sock_id].clone()))));
-
-        match self.tc_blocks.insert(sock_id, tcb) {
-            Some(v) => {
-                warn!("overwrote exisiting value: {:?}", v);
-                Ok(sock_id)
-            }
-            None => Ok(sock_id),
-        }
-    }
-
     pub fn v_bind(&mut self,
                   dl_ctx: &Arc<RwLock<DataLink>>,
                   socket: usize,
@@ -275,6 +256,45 @@ impl TCP {
             None => Err("No TCB associated with this connection!".to_owned()),
         }
     }
+}
+
+pub fn v_socket(tcp_ctx: &Arc<RwLock<TCP>>,
+                dl_ctx: &Arc<RwLock<DataLink>>,
+                rip_ctx: &Arc<RwLock<RipCtx>>)
+                -> Result<usize, String> {
+    trace!("Creating socket...");
+
+    let qr = Arc::new(MsQueue::new());
+    let tcb_clone: Arc<RwLock<TCB>>;
+    let res = {
+        let tcp = &mut (*tcp_ctx.write().unwrap());
+        let sock_id = match tcp.free_sockets.pop() {
+            Some(socket) => socket,
+            None => tcp.tc_blocks.len(),
+        };
+
+        tcp.sock_to_sender.insert(sock_id, qr.clone());
+
+        let tcb = Arc::new(RwLock::new(TCB::new(Some(qr.clone()))));
+        tcb_clone = tcb.clone();
+
+        match tcp.tc_blocks.insert(sock_id, tcb) {
+            Some(v) => {
+                warn!("overwrote exisiting value: {:?}", v);
+                Ok(sock_id)
+            }
+            None => Ok(sock_id),
+        }
+    };
+
+    let dl_ctx_clone = dl_ctx.clone();
+    let rip_ctx_clone = rip_ctx.clone();
+    let tcp_ctx_clone = tcp_ctx.clone();
+    thread::spawn(move || {
+        conn_state_machine(tcb_clone, qr, dl_ctx_clone, rip_ctx_clone, tcp_ctx_clone)
+    });
+
+    res
 }
 
 fn build_tcp_header(t_params: TcpParams,

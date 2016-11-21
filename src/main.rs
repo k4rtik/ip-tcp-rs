@@ -114,8 +114,11 @@ pub fn print_window_sz(tcp_ctx: &Arc<RwLock<TCP>>, sock: usize) {
     }
 }
 
-pub fn accept_cmd(tcp_ctx: &Arc<RwLock<TCP>>, dl_ctx: &Arc<RwLock<DataLink>>, port: u16) {
-    let s = (*tcp_ctx.write().unwrap()).v_socket();
+pub fn accept_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
+                  dl_ctx: &Arc<RwLock<DataLink>>,
+                  rip_ctx: &Arc<RwLock<RipCtx>>,
+                  port: u16) {
+    let s = tcp::v_socket(tcp_ctx, dl_ctx, rip_ctx);
     // TODO think if this scoping is necessary to prevent deadlock?
     {
         let tcp = &mut (*tcp_ctx.write().unwrap());
@@ -151,7 +154,7 @@ pub fn connect_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
                    rip_ctx: &Arc<RwLock<RipCtx>>,
                    addr: Ipv4Addr,
                    port: u16) {
-    let s = (*tcp_ctx.write().unwrap()).v_socket();
+    let s = tcp::v_socket(tcp_ctx, dl_ctx, rip_ctx);
     match s {
         Ok(sock) => {
             match tcp::v_connect(tcp_ctx, dl_ctx, rip_ctx, sock, addr, port) {
@@ -214,7 +217,7 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                         } else {
                             let port = cmd_vec[1].parse::<u16>();
                             match port {
-                                Ok(port) => accept_cmd(&tcp_ctx, &dl_ctx, port),
+                                Ok(port) => accept_cmd(&tcp_ctx, &dl_ctx, &rip_ctx, port),
                                 Err(e) => println!("Error {}", e),
                             }
 
