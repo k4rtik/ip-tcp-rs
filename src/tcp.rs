@@ -21,13 +21,13 @@ const TCP_PROT: u8 = 6;
 const TCP_MAX_WINDOW_SZ: usize = 65535;
 
 #[derive(Default)]
-pub struct TCP<'a> {
+pub struct TCP {
     // container of TCBs
     tc_blocks: HashMap<usize, TCB>,
     free_sockets: Vec<usize>,
     bound_ports: HashSet<(Ipv4Addr, u16)>,
     fourtup_to_sock: HashMap<FourTup, usize>,
-    sock_to_sender: HashMap<usize, MsQueue<SegmentIpParams<'a>>>,
+    sock_to_sender: HashMap<usize, Arc<MsQueue<Message>>>,
 }
 
 #[derive(Hash, PartialEq, Eq)]
@@ -39,8 +39,16 @@ struct FourTup {
 }
 
 #[derive(Debug)]
-pub struct SegmentIpParams<'a> {
-    pub pkt: TcpPacket<'a>,
+#[allow(dead_code)]
+pub enum Message {
+    UserCall,
+    Timeout,
+    IpRecv { pkt: SegmentIpParams },
+}
+
+#[derive(Debug)]
+pub struct SegmentIpParams {
+    pub pkt_buf: Vec<u8>,
     pub params: ip::IpParams,
 }
 
@@ -122,14 +130,6 @@ impl TCB {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
-pub enum Message<'a> {
-    UserCall,
-    Timeout,
-    IpRecv { msg: SegmentIpParams<'a> },
-}
-
-#[derive(Debug)]
 pub struct Socket {
     pub socket_id: usize,
     pub local_addr: Ipv4Addr,
@@ -148,8 +148,8 @@ struct TcpParams {
     window: u16be,
 }
 
-impl<'a> TCP<'a> {
-    pub fn new() -> TCP<'a> {
+impl TCP {
+    pub fn new() -> TCP {
         info!("Starting TCP...");
         TCP {
             tc_blocks: HashMap::new(),
@@ -212,7 +212,7 @@ impl<'a> TCP<'a> {
         };
         let tcb = TCB::new();
 
-        // self.sock_to_sender.insert(sock_id, tx);
+        self.sock_to_sender.insert(sock_id, Arc::new(MsQueue::new()));
         match self.tc_blocks.insert(sock_id, tcb) {
             Some(v) => {
                 warn!("overwrote exisiting value: {:?}", v);
@@ -465,32 +465,29 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
 }
 
 // TODO consider moving inside impl TCP
-pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, cmd: Message) -> Result<(), String> {
+pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, pkt: SegmentIpParams) -> Result<(), String> {
     let tcp = &mut *tcp_ctx.write().unwrap();
-    match cmd {
-        Message::IpRecv { msg } => {
-            let four_tup = FourTup {
-                src_ip: msg.params.src,
-                src_port: msg.pkt.get_source(),
-                dst_ip: msg.params.dst,
-                dst_port: msg.pkt.get_destination(),
-            };
-            match tcp.fourtup_to_sock.get(&four_tup) {
-                Some(sock) => {
-                    match tcp.sock_to_sender.get(sock) {
-                        Some(_) => {
-                            // *(tcb.s_chann.write().unwrap()).send(tcp_pkt);
-                            Ok(())
-                        }
-                        None => Err("No matching sender found!".to_owned()),
-                    }
+    let four_tup: FourTup;
+    {
+        let segment = TcpPacket::new(&pkt.pkt_buf).unwrap();
+        four_tup = FourTup {
+            src_ip: pkt.params.src,
+            src_port: segment.get_source(),
+            dst_ip: pkt.params.dst,
+            dst_port: segment.get_destination(),
+        };
+    }
+    match tcp.fourtup_to_sock.get(&four_tup) {
+        Some(sock) => {
+            match tcp.sock_to_sender.get(sock) {
+                Some(qs) => {
+                    qs.push(Message::IpRecv { pkt: pkt });
+                    Ok(())
                 }
-                None => Err("No corresponding socket found!".to_owned()),
+                None => Err("No matching sender found!".to_owned()),
             }
         }
-        Message::UserCall => Ok(()),
-
-        _ => Err("Unrecognized command!".to_owned()),
+        None => Err("No corresponding socket found!".to_owned()),
     }
 }
 
