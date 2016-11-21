@@ -139,10 +139,13 @@ pub fn accept_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
         }
     }
     let sock = s.unwrap();
+    let dl_ctx = dl_ctx.clone();
+    let rip_ctx = rip_ctx.clone();
+    let tcp_ctx = tcp_ctx.clone();
     thread::spawn(move || {
         loop {
-            match tcp::v_accept(sock, None) {
-                Ok(socket) => trace!("v_accept returned {}", socket),
+            match tcp::v_accept(tcp_ctx.clone(), dl_ctx.clone(), rip_ctx.clone(), sock, None) {
+                Ok(socket) => println!("v_accept on {} returned {}", sock, socket),
                 Err(e) => error!("v_accept: {}", e),
             }
         }

@@ -3,7 +3,6 @@ use std::collections::vec_deque::VecDeque;
 use std::sync::{Arc, RwLock};
 use std::net::Ipv4Addr;
 use std::thread;
-use std::time::Duration;
 use std::str;
 
 use crossbeam::sync::MsQueue;
@@ -100,6 +99,7 @@ struct TCB {
 
     // only for LISTEN
     conns_map: HashMap<(Ipv4Addr, u16), TCB>,
+    qs: Option<Arc<MsQueue<TCB>>>,
 }
 
 impl TCB {
@@ -131,6 +131,7 @@ impl TCB {
             qr: qr,
 
             conns_map: HashMap::new(),
+            qs: None,
         }
     }
 }
@@ -260,6 +261,7 @@ impl TCP {
                     self.bound_ports.insert((tcb.local_ip, tcb.local_port));
                 }
                 tcb.state = Status::Listen;
+                tcb.qs = Some(Arc::new(MsQueue::new()));
                 info!("TCB state changed to LISTEN");
                 Ok(())
             }
@@ -304,6 +306,61 @@ pub fn v_socket(tcp_ctx: &Arc<RwLock<TCP>>,
         conn_state_machine(tcb_clone, qr, dl_ctx_clone, rip_ctx_clone, tcp_ctx_clone)
     });
 
+    res
+}
+
+// TODO consider moving inside one of impl TCP or TCB
+pub fn v_accept(tcp_ctx: Arc<RwLock<TCP>>,
+                dl_ctx: Arc<RwLock<DataLink>>,
+                rip_ctx: Arc<RwLock<RipCtx>>,
+                socket: usize,
+                addr: Option<Ipv4Addr>)
+                -> Result<usize, String> {
+
+    let qr = Arc::new(MsQueue::new());
+    let tcb_clone: Option<Arc<RwLock<TCB>>>;
+    let mut ltcb_qr = Arc::new(MsQueue::new());
+    {
+        let tcp = &(*tcp_ctx.read().unwrap());
+        let ltcb = tcp.tc_blocks[&socket].clone();
+        let ltcb = &(*ltcb.read().unwrap());
+        if let Some(ref qs) = ltcb.qs {
+            ltcb_qr = qs.clone();
+        }
+    }
+
+    debug!("accept thread for socket {} going to block", socket);
+    // blocks
+    let ntcb = ltcb_qr.pop();
+
+    let res = {
+        let tcp = &mut (*tcp_ctx.write().unwrap());
+        let sock_id = match tcp.free_sockets.pop() {
+            Some(socket) => socket,
+            None => tcp.tc_blocks.len(),
+        };
+
+        tcp.sock_to_sender.insert(sock_id, qr.clone());
+        let tcb = Arc::new(RwLock::new(TCB { qr: Some(qr.clone()), ..ntcb }));
+        tcp.fourtup_to_sock.insert(FourTup {
+                                       src_ip: ntcb.local_ip,
+                                       src_port: ntcb.local_port,
+                                       dst_ip: ntcb.remote_ip,
+                                       dst_port: ntcb.remote_port,
+                                   },
+                                   sock_id);
+
+        tcb_clone = Some(tcb.clone());
+
+        match tcp.tc_blocks.insert(sock_id, tcb) {
+            Some(v) => {
+                warn!("overwrote exisiting value: {:?}", v);
+                Ok(sock_id)
+            }
+            None => Ok(sock_id),
+        }
+    };
+    thread::spawn(move || conn_state_machine(tcb_clone.unwrap(), qr, dl_ctx, rip_ctx, tcp_ctx));
     res
 }
 
@@ -413,13 +470,6 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
     // TODO put in retransmit_q?
 
     Ok(())
-}
-
-#[allow(unused_variables)]
-// TODO consider moving inside one of impl TCP or TCB
-pub fn v_accept(socket: usize, addr: Option<Ipv4Addr>) -> Result<usize, String> {
-    thread::sleep(Duration::from_secs(100));
-    Ok(0)
 }
 
 // TODO consider moving inside one of impl TCP or TCB
@@ -655,7 +705,6 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                             should_send_packet = true;
                             tcb.conns_map.insert((dip, dp), ntcb);
                         } else if pkt_flags == TcpFlags::ACK {
-                            // TODO consider combining the two if lets
                             if let Some(ntcb) = tcb.conns_map.get_mut(&(dip, dp)) {
                                 if ntcb.state == Status::SynRcvd {
                                     ntcb.state = Status::Estab;
@@ -663,32 +712,9 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                             }
                             if let Some(ntcb) = tcb.conns_map.remove(&(dip, dp)) {
                                 // TODO check for correct ack
-                                if ntcb.state == Status::Estab {
-                                    let tcp = &mut (*tcp_ctx.write().unwrap());
-                                    let sock_id = match tcp.free_sockets.pop() {
-                                        Some(socket) => socket,
-                                        None => tcp.tc_blocks.len(),
-                                    };
-                                    tcp.sock_to_sender
-                                        .insert(sock_id, Arc::new(MsQueue::new()));
-                                    let tcb = Arc::new(RwLock::new(TCB {
-                                        qr: Some(tcp.sock_to_sender[&sock_id].clone()),
-                                        ..ntcb
-                                    }));
-                                    tcp.fourtup_to_sock.insert(FourTup {
-                                                                   src_ip: ntcb.local_ip,
-                                                                   src_port: ntcb.local_port,
-                                                                   dst_ip: ntcb.remote_ip,
-                                                                   dst_port: ntcb.remote_port,
-                                                               },
-                                                               sock_id);
-                                    match tcp.tc_blocks.insert(sock_id, tcb) {
-                                        Some(v) => {
-                                            warn!("overwrote exisiting value: {:?}", v);
-                                        }
-                                        None => {
-                                            println!("v_accept on socket returned {}", sock_id);
-                                        }
+                                if let Some(ref qs) = tcb.qs {
+                                    if ntcb.state == Status::Estab {
+                                        qs.push(ntcb);
                                     }
                                 }
                             }
