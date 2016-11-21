@@ -309,7 +309,6 @@ pub fn v_socket(tcp_ctx: &Arc<RwLock<TCP>>,
     res
 }
 
-// TODO consider moving inside one of impl TCP or TCB
 pub fn v_accept(tcp_ctx: Arc<RwLock<TCP>>,
                 dl_ctx: Arc<RwLock<DataLink>>,
                 rip_ctx: Arc<RwLock<RipCtx>>,
@@ -673,7 +672,6 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                     Status::Listen => {
                         // Pg. 65-66 in RFC 793
                         info!("packet recvd on TCB in Listen State");
-                        // TODO XXX make sure listener is handled well here
                         debug!("found matching listening socket");
                         // new connection
                         if pkt_flags == TcpFlags::SYN {

@@ -33,7 +33,6 @@ fn build_ipv4_header(params: &IpParams, prot: u8, ttl: u8, id: u16, packet: &mut
 
     ip_header.set_version(4);
     ip_header.set_header_length(5);
-    // TODO set tos here
     ip_header.set_total_length(total_len);
     ip_header.set_identification(id);
     ip_header.set_ttl(ttl);
@@ -41,7 +40,7 @@ fn build_ipv4_header(params: &IpParams, prot: u8, ttl: u8, id: u16, packet: &mut
     ip_header.set_source(params.src);
     ip_header.set_destination(params.dst);
     // if set, total_len needs update with padding
-    //  ip_header.set_options(params.opt);
+    // ip_header.set_options(params.opt);
 
     let checksum = ipv4::checksum(&ip_header.to_immutable());
     ip_header.set_checksum(checksum);

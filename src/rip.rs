@@ -409,7 +409,6 @@ pub fn pkt_handler(rip_ctx: &Arc<RwLock<RipCtx>>,
         1 => {
             // request
             info!("processing RIP request");
-            // TODO check num_entries = 0
             send_routing_table(rip_ctx, dl_ctx, ip_params.src);
         }
         2 => {

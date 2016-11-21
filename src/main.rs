@@ -34,7 +34,6 @@ fn parse_lnx(filename: &str) -> RouteInfo {
     let mut myinfo = String::new();
     file.read_line(&mut myinfo).expect("Parse error: couldn't read self information");
 
-    // TODO validate socket_addr
     let socket_addr = myinfo.trim().to_string();
     let mut _id = 0;
     let interfaces: Vec<_> = file.lines()
@@ -119,7 +118,6 @@ pub fn accept_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
                   rip_ctx: &Arc<RwLock<RipCtx>>,
                   port: u16) {
     let s = tcp::v_socket(tcp_ctx, dl_ctx, rip_ctx);
-    // TODO think if this scoping is necessary to prevent deadlock?
     {
         let tcp = &mut (*tcp_ctx.write().unwrap());
         match s {
