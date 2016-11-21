@@ -94,12 +94,15 @@ struct TCB {
     irs: u32, // initial receive sequence number
     read_nxt: u32,
 
+    // recv end of channel
+    qr: Option<Arc<MsQueue<Message>>>,
+
     // only for LISTEN
     conns_q: VecDeque<TCB>,
 }
 
 impl TCB {
-    fn new() -> TCB {
+    fn new(qr: Option<Arc<MsQueue<Message>>>) -> TCB {
         TCB {
             local_ip: "0.0.0.0".parse::<Ipv4Addr>().unwrap(),
             local_port: 0,
@@ -123,6 +126,8 @@ impl TCB {
             rcv_wnd: TCP_MAX_WINDOW_SZ as u16,
             irs: rand::random::<u16>() as u32,
             read_nxt: 0,
+
+            qr: qr,
 
             conns_q: VecDeque::new(),
         }
@@ -210,9 +215,10 @@ impl TCP {
             Some(socket) => socket,
             None => self.tc_blocks.len(),
         };
-        let tcb = TCB::new();
 
         self.sock_to_sender.insert(sock_id, Arc::new(MsQueue::new()));
+        let tcb = TCB::new(Some(self.sock_to_sender[&sock_id].clone()));
+
         match self.tc_blocks.insert(sock_id, tcb) {
             Some(v) => {
                 warn!("overwrote exisiting value: {:?}", v);
@@ -795,7 +801,7 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                     debug!("found matching listening socket");
                     // new connection
                     if pkt_flags == TcpFlags::SYN {
-                        let mut ntcb = TCB::new();
+                        let mut ntcb = TCB::new(None);
                         ntcb.local_ip = lip;
                         ntcb.local_port = lp;
                         ntcb.remote_ip = dip;
@@ -844,12 +850,15 @@ pub fn pkt_handler(dl_ctx: &Arc<RwLock<DataLink>>,
                 Some(socket) => socket,
                 None => tcp.tc_blocks.len(),
             };
+            tcp.sock_to_sender.insert(sock_id, Arc::new(MsQueue::new()));
             let tcb: TCB;
             {
                 let conns_q = &mut tcp.tc_blocks.get_mut(&parent_socket).unwrap().conns_q;
-                tcb = conns_q.pop_front().unwrap();
+                tcb = TCB {
+                    qr: Some(tcp.sock_to_sender[&sock_id].clone()),
+                    ..conns_q.pop_front().unwrap()
+                };
             }
-            // tcp.sock_to_sender.insert(sock_id, tx);
             match tcp.tc_blocks.insert(sock_id, tcb) {
                 Some(v) => {
                     warn!("overwrote exisiting value: {:?}", v);
