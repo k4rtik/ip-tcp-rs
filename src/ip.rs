@@ -143,20 +143,21 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>,
                     }
                     IpNextHeaderProtocol(6) => {
                         match tcp::demux(tcp_ctx.unwrap(),
-                                   tcp::SegmentIpParams {
-                                       pkt_buf: pkt.payload().to_vec(),
-                                       params: IpParams {
-                                           src: pkt.get_source(),
-                                           dst: pkt.get_destination(),
-                                           len: get_ipv4_payload_length(&pkt.to_immutable()),
-                                           tos: 0, // XXX hardcoded, incorrect
-                                           opt: pkt.get_options(),
-                                       },
-                                   })
-			{
-			Ok(_) => {},
-			Err(e)=> {debug!("{}", e);},
-			}
+                                         tcp::SegmentIpParams {
+                                             pkt_buf: pkt.payload().to_vec(),
+                                             params: IpParams {
+                                                 src: pkt.get_source(),
+                                                 dst: pkt.get_destination(),
+                                                 len: get_ipv4_payload_length(&pkt.to_immutable()),
+                                                 tos: 0, // XXX hardcoded, incorrect
+                                                 opt: pkt.get_options(),
+                                             },
+                                         }) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                debug!("{}", e);
+                            }
+                        }
                     }
                     IpNextHeaderProtocol(200) => {
                         rip::pkt_handler(rip_ctx,
