@@ -228,6 +228,15 @@ impl TCP {
                         tcb.local_port = port;
                         // remote ip and port are zeros from v_socket()
                         self.bound_ports.insert((tcb.local_ip, port));
+                        self.fourtup_to_sock.insert(FourTup {
+                                                        src_ip: tcb.local_ip,
+                                                        src_port: port,
+                                                        dst_ip: "0.0.0.0"
+                                                            .parse::<Ipv4Addr>()
+                                                            .unwrap(),
+                                                        dst_port: 0,
+                                                    },
+                                                    socket);
                         return Ok(());
                     }
                 }
@@ -381,6 +390,13 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
     }
 
     (*tcp_ctx.write().unwrap()).bound_ports.insert((local_ip, unused_port));
+    (*tcp_ctx.write().unwrap()).fourtup_to_sock.insert(FourTup {
+                                                           src_ip: local_ip,
+                                                           src_port: unused_port,
+                                                           dst_ip: dst_addr,
+                                                           dst_port: port,
+                                                       },
+                                                       socket);
     // send SYN
     let segment = TcpPacket::new(&pkt_buf).unwrap();
     ip::send(dl_ctx,
@@ -504,10 +520,10 @@ pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, pkt: SegmentIpParams) -> Result<(), Str
     {
         let segment = TcpPacket::new(&pkt.pkt_buf).unwrap();
         four_tup = FourTup {
-            src_ip: pkt.params.src,
-            src_port: segment.get_source(),
-            dst_ip: pkt.params.dst,
-            dst_port: segment.get_destination(),
+            src_ip: pkt.params.dst,
+            src_port: segment.get_destination(),
+            dst_ip: pkt.params.src,
+            dst_port: segment.get_source(),
         };
     }
     match tcp.fourtup_to_sock.get(&four_tup) {
@@ -522,17 +538,14 @@ pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, pkt: SegmentIpParams) -> Result<(), Str
         }
         None => {
             {
-                let segment = TcpPacket::new(&pkt.pkt_buf).unwrap();
                 four_tup = FourTup {
-                    src_ip: pkt.params.src,
-                    src_port: segment.get_source(),
                     dst_ip: "0.0.0.0".parse::<Ipv4Addr>().unwrap(),
                     dst_port: 0,
+                    ..four_tup
                 };
             }
             match tcp.fourtup_to_sock.get(&four_tup) {
                 Some(sock) => {
-                    // TODO make sure it is in Listen state
                     match tcp.sock_to_sender.get(sock) {
                         Some(qs) => {
                             qs.push(Message::IpRecv { pkt: pkt });
@@ -662,6 +675,13 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                         qr: Some(tcp.sock_to_sender[&sock_id].clone()),
                                         ..ntcb
                                     }));
+                                    tcp.fourtup_to_sock.insert(FourTup {
+                                                                   src_ip: ntcb.local_ip,
+                                                                   src_port: ntcb.local_port,
+                                                                   dst_ip: ntcb.remote_ip,
+                                                                   dst_port: ntcb.remote_port,
+                                                               },
+                                                               sock_id);
                                     match tcp.tc_blocks.insert(sock_id, tcb) {
                                         Some(v) => {
                                             warn!("overwrote exisiting value: {:?}", v);
