@@ -316,7 +316,9 @@ pub fn v_accept(tcp_ctx: Arc<RwLock<TCP>>,
                 socket: usize,
                 addr: Option<Ipv4Addr>)
                 -> Result<usize, String> {
-
+    if let Some(addr) = addr {
+        debug!{"v_accept called for addr: {:?}", addr};
+    }
     let qr = Arc::new(MsQueue::new());
     let tcb_clone: Option<Arc<RwLock<TCB>>>;
     let mut ltcb_qr = Arc::new(MsQueue::new());
