@@ -142,7 +142,7 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>,
                         print_pkt_contents(pkt.to_immutable());
                     }
                     IpNextHeaderProtocol(6) => {
-                        tcp::demux(tcp_ctx.unwrap(),
+                        match tcp::demux(tcp_ctx.unwrap(),
                                    tcp::SegmentIpParams {
                                        pkt_buf: pkt.payload().to_vec(),
                                        params: IpParams {
@@ -153,7 +153,10 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>,
                                            opt: pkt.get_options(),
                                        },
                                    })
-                            .unwrap();
+			{
+			Ok(_) => {},
+			Err(e)=> {debug!("{}", e);},
+			}
                     }
                     IpNextHeaderProtocol(200) => {
                         rip::pkt_handler(rip_ctx,

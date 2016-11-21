@@ -30,6 +30,7 @@ pub struct TCP {
     sock_to_sender: HashMap<usize, Arc<MsQueue<Message>>>,
 }
 
+#[derive(Debug)]
 #[derive(Hash, PartialEq, Eq)]
 struct FourTup {
     src_ip: Ipv4Addr,
@@ -525,7 +526,7 @@ pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, pkt: SegmentIpParams) -> Result<(), Str
                 four_tup = FourTup {
                     src_ip: pkt.params.src,
                     src_port: segment.get_source(),
-                    dst_ip: Ipv4Addr::new(0, 0, 0, 0),
+                    dst_ip: "0.0.0.0".parse::<Ipv4Addr>().unwrap(),
                     dst_port: 0,
                 };
             }
@@ -537,10 +538,14 @@ pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, pkt: SegmentIpParams) -> Result<(), Str
                             qs.push(Message::IpRecv { pkt: pkt });
                             Ok(())
                         }
-                        None => Err("No matching TCB found!".to_owned()),
+                        None => Err("No matching sender found!".to_owned()),
                     }
                 }
-                None => Err("No matching sock found!".to_owned()),
+                None => {
+                    debug!("{:?}", tcp.fourtup_to_sock);
+                    debug!("{:?}", four_tup);
+                    Err("No matching sock found!".to_owned())
+                }
             }
         }
     }
