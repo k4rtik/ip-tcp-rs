@@ -404,7 +404,6 @@ fn build_tcp_header(t_params: TcpParams,
 
 // TODO consider moving inside impl TCP
 pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
-                 dl_ctx: &Arc<RwLock<DataLink>>,
                  rip_ctx: &Arc<RwLock<RipCtx>>,
                  socket: usize,
                  dst_addr: Ipv4Addr,

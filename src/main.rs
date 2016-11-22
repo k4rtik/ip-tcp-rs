@@ -158,7 +158,7 @@ pub fn connect_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
     let s = tcp::v_socket(tcp_ctx, dl_ctx, rip_ctx);
     match s {
         Ok(sock) => {
-            match tcp::v_connect(tcp_ctx, dl_ctx, rip_ctx, sock, addr, port) {
+            match tcp::v_connect(tcp_ctx, rip_ctx, sock, addr, port) {
                 Ok(_) => info!("v_connect() put new TCB in SynSent state"),
                 Err(e) => error!("v_connect() failed: {}", e),
             }
