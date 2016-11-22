@@ -648,6 +648,19 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
     loop {
         // blocks
         let msg = qr.pop();
+
+        let mut should_send_packet = false;
+        let mut t_params: TcpParams;
+        let pkt_sz = MutableTcpPacket::minimum_packet_size();
+        let mut ip_params = ip::IpParams {
+            src: "0.0.0.0".parse::<Ipv4Addr>().unwrap(),
+            dst: "0.0.0.0".parse::<Ipv4Addr>().unwrap(),
+            len: pkt_sz, // TODO make sure this gets updated correctly for send call
+            tos: 0,
+            opt: vec![],
+        };
+        let mut pkt_buf = vec![0u8; pkt_sz];
+
         match msg {
             UserCall { call } => {
                 use self::UserCallKind::*;
@@ -722,7 +735,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
             }
             IpRecv { pkt } => {
                 let segment = pkt.pkt_buf;
-                let ip_params = pkt.params;
+                let pkt_ip_params = pkt.params;
                 let pkt = TcpPacket::new(&segment).unwrap();
                 debug!("{:?}", pkt);
                 // TODO verify checksum
@@ -731,26 +744,19 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                 let pkt_flags = pkt.get_flags();
                 let pkt_window = pkt.get_window();
 
-                let pkt_size = ip_params.len;
+                let pkt_size = pkt_ip_params.len;
 
                 let (lip, lp, dip, dp) =
-                    (ip_params.dst, pkt.get_destination(), ip_params.src, pkt.get_source());
+                    (pkt_ip_params.dst, pkt.get_destination(), pkt_ip_params.src, pkt.get_source());
 
-                let mut should_send_packet = false;
-
+                ip_params = ip::IpParams {
+                    src: lip,
+                    dst: dip,
+                    ..ip_params
+                };
                 // let mut mark_tcb_for_deletion = false;
                 // let mut sock_to_be_deleted = 0;
 
-                let mut t_params: TcpParams;
-                let pkt_sz = MutableTcpPacket::minimum_packet_size();
-                let ip_params = ip::IpParams {
-                    src: lip,
-                    dst: dip,
-                    len: pkt_sz,
-                    tos: 0,
-                    opt: vec![],
-                };
-                let mut pkt_buf = vec![0u8; pkt_sz];
 
                 let tcb = &mut (*tcb_ref.write().unwrap());
                 // regular socket
@@ -1040,21 +1046,20 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                         }
                     }
                 }
-
-                if should_send_packet {
-                    let segment = TcpPacket::new(&pkt_buf[..]).unwrap();
-                    ip::send(&dl_ctx,
-                             Some(&rip_ctx),
-                             Some(&tcp_ctx),
-                             ip_params,
-                             TCP_PROT,
-                             rip::INFINITY,
-                             segment.packet().to_vec(),
-                             0,
-                             true)
-                        .unwrap();
-                }
             }
+        }
+        if should_send_packet {
+            let segment = TcpPacket::new(&pkt_buf[..]).unwrap();
+            ip::send(&dl_ctx,
+                     Some(&rip_ctx),
+                     Some(&tcp_ctx),
+                     ip_params,
+                     TCP_PROT,
+                     rip::INFINITY,
+                     segment.packet().to_vec(),
+                     0,
+                     true)
+                .unwrap();
         }
     }
 }
