@@ -207,19 +207,29 @@ pub fn recv_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: b
     let mut data_recv = Vec::new();
     if block {
         loop {
-            data_recv.append(&mut tcp::v_read(tcp_ctx, socket, size - bytes));
-            // debug!("bytes written: {:?}", bytes);
-            if data_recv.len() > bytes {
-                bytes += data_recv.len();
-            }
-            if bytes >= size {
-                debug!("bytes written: {:?}", bytes);
-                break;
+            match tcp::v_read(tcp_ctx, socket, size - bytes) {
+                Ok(mut data) => {
+                    data_recv.append(&mut data);
+                    // debug!("bytes written: {:?}", bytes);
+                    if data_recv.len() > bytes {
+                        bytes += data_recv.len();
+                    }
+                    if bytes >= size {
+                        debug!("bytes written: {:?}", bytes);
+                        break;
+                    }
+                } 
+                Err(e) => println!("{:?}", e),
             }
         }
     } else {
-        data_recv.append(&mut tcp::v_read(tcp_ctx, socket, size));
-        bytes = data_recv.len();
+        match tcp::v_read(tcp_ctx, socket, size) {
+            Ok(mut data) => {
+                data_recv.append(&mut data);
+                bytes = data_recv.len();
+            }
+            Err(e) => println!("{:?}", e),
+        }
     }
     debug!("Data recvd: {:?}", String::from_utf8_lossy(&data_recv));
     debug!("bytes written: {:?}", bytes);

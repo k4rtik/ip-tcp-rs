@@ -501,15 +501,18 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
 }
 
 // TODO consider moving inside one of impl TCP or TCB
-pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) -> Vec<u8> {
+pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) -> Result<Vec<u8>, String> {
     // TODO for Sumukha
-    // if (*tcp_ctx.read().unwrap()).invalidated_socks.contains(&socket) {
-    //    return Err(format!("error: socket {:?} is invalidated", socket));
-    //
     // if (*tcp_ctx.read().unwrap()).unreadable_socks.contains(&socket) {
     //    return Err(format!("error: socket {:?} is not readable anymore", socket));
 
     let tcp = &mut *tcp_ctx.write().unwrap();
+    if tcp.invalidated_socks.contains(&socket) {
+        return Err(format!("error: socket {:?} is invalidated", socket));
+    }
+    if tcp.unreadable_socks.contains(&socket) {
+        return Err(format!("error: socket {:?} is not readable anymore", socket));
+    }
     match tcp.tc_blocks.get(&socket) {
         Some(tcb) => {
             let tcb = &mut (*tcb.write().unwrap());
@@ -520,7 +523,7 @@ pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) -> Vec<u8>
                 tcb.read_nxt += size as u32;
                 tcb.rcv_wnd += size as u16;
                 debug!("rcv_wnd = {:?}", tcb.rcv_wnd);
-                tcb.rcv_buffer[i..i + size].to_vec()
+                Ok(tcb.rcv_buffer[i..i + size].to_vec())
             } else {
                 let i = tcb.read_nxt as usize;
                 let sz: usize = (tcb.rcv_nxt - (tcb.read_nxt + tcb.irs) - 1) as usize;
@@ -533,10 +536,10 @@ pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) -> Vec<u8>
                     tcb.rcv_wnd += sz as u16;
                     debug!("rcv_wnd = {:?}", tcb.rcv_wnd);
                 }
-                tcb.rcv_buffer[i..i + sz].to_vec()
+                Ok(tcb.rcv_buffer[i..i + sz].to_vec())
             }
         }
-        None => Vec::new(),
+        None => Err("No matching TCB found!".to_owned()),
     }
 }
 
@@ -798,21 +801,22 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                             }
                             Estab | CloseWait => {
                                 // fill the send buffer as above
-                                //debug!("snd_nxt {:?}", tcb.snd_nxt);
-                                //let idx = tcb.buf_write_next as usize;
-                                //// TODO consider rolling back the buffer
-                                //if tcb.snd_buffer.len() - idx > buffer.len() {
+                                // debug!("snd_nxt {:?}", tcb.snd_nxt);
+                                // let idx = tcb.buf_write_next as usize;
+                                // / TODO consider rolling back the buffer
+                                // if tcb.snd_buffer.len() - idx > buffer.len() {
                                 //    debug!("snd_buffer {:?}", &tcb.snd_buffer[..100]);
                                 //    for (i, byte) in buffer.iter().enumerate() {
                                 //        tcb.snd_buffer[idx + i] = buffer[i];
                                 //    }
                                 //    debug!("snd_buffer {:?}", &tcb.snd_buffer[..100]);
                                 //    tcb.buf_write_next += buffer.len() as u32;
-                                //} else {
+                                // } else {
                                 //    error!("insufficient resources");
-                                //}
+                                // }
 
-                                if tcb.snd_wnd > ((tcb.snd_nxt - tcb.iss + buffer.len() as u32) as u16) {
+                                if tcb.snd_wnd >
+                                   ((tcb.snd_nxt - tcb.iss + buffer.len() as u32) as u16) {
                                     let idx = tcb.buf_write_next as usize;
                                     debug!("snd_buffer {:?}", &tcb.snd_buffer[..100]);
                                     for (i, byte) in buffer.iter().enumerate() {
@@ -839,7 +843,8 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                                      &mut pkt_buf);
                                     {
                                         let segment = MutableTcpPacket::new(&mut pkt_buf).unwrap();
-                                        pkt_sz = MutableTcpPacket::packet_size(&segment.from_packet());
+                                        pkt_sz =
+                                            MutableTcpPacket::packet_size(&segment.from_packet());
                                     }
                                     ip_params = ip::IpParams {
                                         src: tcb.local_ip,
