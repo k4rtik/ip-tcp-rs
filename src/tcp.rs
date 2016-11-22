@@ -671,7 +671,40 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
 
                                 should_send_packet = true;
                             }
-                            Listen => {}
+                            Listen => {
+                                // TODO XXX test this code path
+                                tcb.remote_ip = dst_addr;
+                                tcb.remote_port = port;
+                                tcb.iss = rand::random::<u16>() as u32; // TODO see pg. 54 to confirm
+
+                                t_params = TcpParams {
+                                    src_port: tcb.local_port,
+                                    dst_port: tcb.remote_port,
+                                    seq_num: tcb.iss,
+                                    ack_num: 0,
+                                    flags: TcpFlags::SYN,
+                                    window: tcb.rcv_wnd,
+                                };
+
+                                build_tcp_header(t_params,
+                                                 tcb.local_ip,
+                                                 dst_addr,
+                                                 None,
+                                                 &mut pkt_buf);
+                                // TODO take care of SEND here
+                                ip_params = ip::IpParams {
+                                    src: tcb.local_ip,
+                                    dst: dst_addr,
+                                    ..ip_params
+                                };
+
+                                tcb.snd_una = tcb.iss;
+                                tcb.snd_nxt = tcb.iss + 1;
+                                info!("Switching a Listening socket to SynSent");
+                                tcb.state = Status::SynSent;
+
+                                should_send_packet = true;
+                            }
                             _ => {
                                 error!("connection already exists");
                             }
