@@ -317,7 +317,7 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                             let socket = cmd_vec[1].parse::<usize>().unwrap();
                             let size = cmd_vec[2].parse::<usize>().unwrap();
                             if cmd_vec.len() == 4 {
-                                if cmd_vec[3].to_string() == "y" {
+                                if cmd_vec[3] == "y" {
                                     recv_cmd(&tcp_ctx, socket, size, true);
                                 } else {
                                     recv_cmd(&tcp_ctx, socket, size, false);

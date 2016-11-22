@@ -41,9 +41,25 @@ struct FourTup {
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum Message {
-    UserCall,
-    Timeout,
+    UserCall { call: UserCallKind },
+    Timeout { to: TimeoutKind },
     IpRecv { pkt: SegmentIpParams },
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub enum UserCallKind {
+    Open,
+    Send,
+    Receive,
+    Close,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub enum TimeoutKind {
+    Retransmission,
+    TimeWaitTO,
 }
 
 #[derive(Debug)]
@@ -635,7 +651,77 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
         // blocks
         let msg = qr.pop();
         match msg {
-            UserCall | Timeout => {}
+            UserCall { call } => {
+                use self::UserCallKind::*;
+                use self::Status::*;
+                match call {
+                    Open => {
+                        let tcb = &mut (*tcb_ref.write().unwrap());
+                        #[allow(match_same_arms)]
+                        match tcb.state {
+                            Closed => {}
+                            Listen => {}
+                            _ => {
+                                error!("connection already exists");
+                            }
+                        }
+                    }
+                    Send => {
+                        let tcb = &mut (*tcb_ref.write().unwrap());
+                        #[allow(match_same_arms)]
+                        match tcb.state {
+                            Closed => {}
+                            Listen => {}
+                            SynSent | SynRcvd => {}
+                            Estab | CloseWait => {}
+                            _ => {
+                                error!("connection closing");
+                            }
+                        }
+                    }
+                    Receive => {
+                        let tcb = &mut (*tcb_ref.write().unwrap());
+                        #[allow(match_same_arms)]
+                        match tcb.state {
+                            Closed => {}
+                            Listen | SynSent | SynRcvd => {}
+                            Estab | FinWait1 | FinWait2 => {}
+                            CloseWait => {}
+                            _ => {
+                                error!("connection closing");
+                            }
+                        }
+                    }
+                    Close => {
+                        let tcb = &mut (*tcb_ref.write().unwrap());
+                        #[allow(match_same_arms)]
+                        match tcb.state {
+                            Closed => {}
+                            Listen => {}
+                            SynSent => {}
+                            SynRcvd => {}
+                            Estab => {}
+                            FinWait1 | FinWait2 => {}
+                            CloseWait => {}
+                            _ => {
+                                error!("connection closing");
+                            }
+                        }
+                    }
+                }
+            }
+            Timeout { to } => {
+                use self::TimeoutKind::*;
+                #[allow(match_same_arms)]
+                match to {
+                    Retransmission => {
+                        // TODO see pg. 77
+                    }
+                    TimeWaitTO => {
+                        // TODO see pg. 77
+                    }
+                }
+            }
             IpRecv { pkt } => {
                 let segment = pkt.pkt_buf;
                 let ip_params = pkt.params;
