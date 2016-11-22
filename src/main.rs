@@ -23,7 +23,6 @@ use std::io::{BufReader, BufRead};
 use std::net::Ipv4Addr;
 use std::sync::{Arc, RwLock};
 use std::thread;
-use std::io::Read;
 
 use datalink::{DataLink, Interface, SocketAddrInterface, RouteInfo};
 use rip::{RipCtx, Route};
@@ -188,7 +187,7 @@ pub fn send_file_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
                     info!("v_connect() put new TCB in SynSent state");
                     let mut f = BufReader::new(File::open(fl).unwrap());
                     let mut buf = String::new();
-                    let bytes = f.read_line(&mut buf).expect("Parse error");
+                    f.read_line(&mut buf).expect("Parse error");
                     debug!("buf: {:?}", buf);
                     let bytes = tcp::v_write(tcp_ctx, sock, buf.as_bytes());
                     debug!("bytes written: {:?}", bytes);
@@ -228,13 +227,13 @@ pub fn recv_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: b
 
 fn shutdown_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, mode: String) {
     info!("Shutting down...");
-    let mut m = 1;
-    if mode == "read" {
-        m = 2;
-    }
-    if mode == "both" {
-        m = 3;
-    }
+    let m = if mode == "read" {
+        2
+    } else if mode == "both" {
+        3
+    } else {
+        1 // write
+    };
     match tcp::v_shutdown(tcp_ctx, socket, m) {
         Ok(_) => println!("Shutdown successful!"),
         Err(e) => println!("Shutdown failed! {:?}", e),
