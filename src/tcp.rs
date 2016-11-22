@@ -564,26 +564,32 @@ pub fn v_shutdown(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, mode: usize) -> Res
         return Err(format!("error: socket {:?} is invalidated", socket));
     }
 
-    match mode {
-        1 => {
-            // write
-            Ok(())
-        }
-        2 => {
-            // read
-            let tcp = &mut *tcp_ctx.write().unwrap();
-            if tcp.tc_blocks.get(&socket).is_some() {
-                tcp.unreadable_socks.insert(socket);
+    let tcp = &mut *tcp_ctx.write().unwrap();
+    if tcp.tc_blocks.get(&socket).is_none() {
+        Err(format!("No TCB exists for given socket: {:?}", socket))
+    } else {
+        let qs = tcp.sock_to_sender[&socket].clone();
+        match mode {
+            1 => {
+                // write
+                qs.push(Message::UserCall { call: UserCallKind::Close });
                 Ok(())
-            } else {
-                Err(format!("No TCB exists for given socket: {:?}", socket))
             }
+            2 => {
+                // read
+                tcp.unreadable_socks.insert(socket);
+                // TODO make sure window size doesn't grow anymore
+                Ok(())
+            }
+            3 => {
+                // both
+                tcp.unreadable_socks.insert(socket);
+                // TODO make sure window size doesn't grow anymore
+                qs.push(Message::UserCall { call: UserCallKind::Close });
+                Ok(())
+            }
+            _ => Err(format!("invalid type: {:?}", mode)),
         }
-        3 => {
-            // both
-            Ok(())
-        }
-        _ => Err(format!("invalid type: {:?}", mode)),
     }
 }
 
@@ -592,13 +598,22 @@ pub fn v_close(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize) -> Result<(), String> 
         return Err(format!("error: socket {:?} is already invalidated", socket));
     }
 
-    let tcp = &mut *tcp_ctx.write().unwrap();
-    if tcp.tc_blocks.get(&socket).is_some() {
-        // TODO invalidate write part of socket (shutdown). Is it even necessary?
-        tcp.invalidated_socks.insert(socket);
-        Ok(())
+    let res: Result<(), String>;
+
+    {
+        let tcp = &mut *tcp_ctx.write().unwrap();
+        res = if tcp.tc_blocks.get(&socket).is_some() {
+            tcp.invalidated_socks.insert(socket);
+            Ok(())
+        } else {
+            Err(format!("No TCB exists for given socket: {:?}", socket))
+        }
+    }
+
+    if res.is_ok() {
+        v_shutdown(tcp_ctx, socket, 1)
     } else {
-        Err(format!("No TCB exists for given socket: {:?}", socket))
+        res
     }
 }
 
