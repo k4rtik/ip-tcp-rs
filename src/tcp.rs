@@ -527,6 +527,7 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
         return Err(format!("error: socket {:?} is invalidated", socket));
     }
 
+    debug!("Message: {:?}", message);
     let t_params: TcpParams;
     let mut pkt_buf: Vec<u8>;
     let segment: MutableTcpPacket;

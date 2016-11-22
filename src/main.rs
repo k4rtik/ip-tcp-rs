@@ -23,6 +23,7 @@ use std::io::{BufReader, BufRead};
 use std::net::Ipv4Addr;
 use std::sync::{Arc, RwLock};
 use std::thread;
+use std::io::Read;
 
 use datalink::{DataLink, Interface, SocketAddrInterface, RouteInfo};
 use rip::{RipCtx, Route};
@@ -176,6 +177,34 @@ pub fn send_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
     debug!("bytes written: {:?}", bytes);
 }
 
+pub fn send_file_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
+                     dl_ctx: &Arc<RwLock<DataLink>>,
+                     rip_ctx: &Arc<RwLock<RipCtx>>,
+                     fl: String,
+                     addr: Ipv4Addr,
+                     port: u16) {
+    info!("Sending file...");
+    let s = tcp::v_socket(tcp_ctx, dl_ctx, rip_ctx);
+    match s {
+        Ok(sock) => {
+            match tcp::v_connect(tcp_ctx, dl_ctx, rip_ctx, sock, addr, port) {
+                Ok(_) => {
+                    info!("v_connect() put new TCB in SynSent state");
+                    let mut f = BufReader::new(File::open(fl).unwrap());
+                    let mut buf = String::new();
+                    let bytes = f.read_line(&mut buf).expect("Parse error");
+                    debug!("buf: {:?}", buf);
+                    let bytes = tcp::v_write(tcp_ctx, dl_ctx, rip_ctx, sock, buf.as_bytes());
+                    debug!("bytes written: {:?}", bytes);
+                }
+                Err(e) => error!("v_connect() failed: {}", e),
+            }
+        }
+        Err(e) => error!("v_socket() failed: {}", e),
+    }
+
+}
+
 pub fn recv_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: bool) {
     info!("Receiving...");
     info!("Size req: {:?}", size);
@@ -195,6 +224,7 @@ pub fn recv_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: b
         }
     } else {
         data_recv.append(&mut tcp::v_read(tcp_ctx, socket, size));
+        bytes = data_recv.len();
     }
     debug!("Data recvd: {:?}", String::from_utf8_lossy(&data_recv));
     debug!("bytes written: {:?}", bytes);
@@ -308,7 +338,7 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                     }
                     "send" | "s" | "w" => {
                         // TODO this implementation is for IP, write one for TCP
-                        if cmd_vec.len() != 3 {
+                        if cmd_vec.len() < 3 {
                             println!("Missing parameters");
                         } else {
                             let socket = cmd_vec[1].parse::<usize>().unwrap();
@@ -338,7 +368,14 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                         if cmd_vec.len() != 4 {
                             println!("Missing parameters!");
                         } else {
-                            println!("Sending file...");
+                            let file_name = cmd_vec[1].to_string();
+                            match cmd_vec[2].parse::<Ipv4Addr>() {
+                                Ok(ip) => {
+                                    let port = cmd_vec[3].parse::<u16>().unwrap();
+                                    send_file_cmd(&tcp_ctx, &dl_ctx, &rip_ctx, file_name, ip, port);
+                                }
+                                Err(_) => println!("IP address not in format!"),
+                            }
                         }
                     }
                     "recvfile" | "rf" => {
