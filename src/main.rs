@@ -365,9 +365,14 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                     }
                     "close" => {
                         if cmd_vec.len() != 2 {
-                            println!("Missing parameters!");
+                            println!("syntax error (usage: close <socket>)");
                         } else {
                             println!("Closing socket...");
+                            let socket = cmd_vec[1].parse::<usize>().unwrap();
+                            match tcp::v_close(&tcp_ctx, socket) {
+                                Ok(_) => println!("v_close() returned 0"),
+                                Err(e) => println!("v_close() error: {:?}", e),
+                            }
                         }
                     }
                     "help" => {

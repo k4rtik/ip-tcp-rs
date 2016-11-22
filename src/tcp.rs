@@ -24,6 +24,7 @@ pub struct TCP {
     // container of TCBs
     tc_blocks: HashMap<usize, Arc<RwLock<TCB>>>,
     free_sockets: Vec<usize>,
+    invalidated_socks: HashSet<usize>,
     bound_ports: HashSet<(Ipv4Addr, u16)>,
     fourtup_to_sock: HashMap<FourTup, usize>,
     sock_to_sender: HashMap<usize, Arc<MsQueue<Message>>>,
@@ -177,6 +178,7 @@ impl TCP {
         TCP {
             tc_blocks: HashMap::new(),
             free_sockets: Vec::new(),
+            invalidated_socks: HashSet::new(),
             bound_ports: HashSet::new(),
             fourtup_to_sock: HashMap::new(),
             sock_to_sender: HashMap::new(),
@@ -234,6 +236,10 @@ impl TCP {
                   addr: Option<Ipv4Addr>,
                   port: u16)
                   -> Result<(), String> {
+        if self.invalidated_socks.contains(&socket) {
+            return Err(format!("error: socket {:?} is invalidated", socket));
+        }
+
         info!("Binding to IP {:?}, port {}", addr, port);
         match self.tc_blocks.get(&socket) {
             Some(tcb) => {
@@ -267,6 +273,10 @@ impl TCP {
                     dl_ctx: &Arc<RwLock<DataLink>>,
                     socket: usize)
                     -> Result<(), String> {
+        if self.invalidated_socks.contains(&socket) {
+            return Err(format!("error: socket {:?} is invalidated", socket));
+        }
+
         let ip_port = self.get_unused_ip_port(dl_ctx).unwrap();
         match self.tc_blocks.get(&socket) {
             Some(tcb) => {
@@ -331,6 +341,10 @@ pub fn v_accept(tcp_ctx: Arc<RwLock<TCP>>,
                 socket: usize,
                 addr: Option<Ipv4Addr>)
                 -> Result<usize, String> {
+    if (*tcp_ctx.read().unwrap()).invalidated_socks.contains(&socket) {
+        return Err(format!("error: socket {:?} is invalidated", socket));
+    }
+
     if let Some(addr) = addr {
         debug!{"v_accept called for addr: {:?}", addr};
     }
@@ -409,6 +423,10 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
                  dst_addr: Ipv4Addr,
                  port: u16)
                  -> Result<(), String> {
+    if (*tcp_ctx.read().unwrap()).invalidated_socks.contains(&socket) {
+        return Err(format!("error: socket {:?} is invalidated", socket));
+    }
+
     {
         let tcp = &mut *tcp_ctx.write().unwrap();
         if let Some(tcb) = tcp.tc_blocks.get(&socket) {
@@ -462,6 +480,11 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
 
 // TODO consider moving inside one of impl TCP or TCB
 pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) -> Vec<u8> {
+    // TODO for Sumukha
+    // if (*tcp_ctx.read().unwrap()).invalidated_socks.contains(&socket) {
+    //    return Err(format!("error: socket {:?} is invalidated", socket));
+    //
+
     let tcp = &mut *tcp_ctx.write().unwrap();
     match tcp.tc_blocks.get(&socket) {
         Some(tcb) => {
@@ -500,6 +523,10 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
                socket: usize,
                message: &[u8])
                -> Result<usize, String> {
+    if (*tcp_ctx.read().unwrap()).invalidated_socks.contains(&socket) {
+        return Err(format!("error: socket {:?} is invalidated", socket));
+    }
+
     let t_params: TcpParams;
     let mut pkt_buf: Vec<u8>;
     let segment: MutableTcpPacket;
@@ -557,6 +584,21 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
         }
     }
     Ok(message.len())
+}
+
+pub fn v_close(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize) -> Result<(), String> {
+    if (*tcp_ctx.read().unwrap()).invalidated_socks.contains(&socket) {
+        return Err(format!("error: socket {:?} is already invalidated", socket));
+    }
+
+    let tcp = &mut *tcp_ctx.write().unwrap();
+    if tcp.tc_blocks.get(&socket).is_some() {
+        // TODO invalidate write part of socket (shutdown). Is it even necessary?
+        tcp.invalidated_socks.insert(socket);
+        Ok(())
+    } else {
+        Err(format!("No TCB exists for given socket: {:?}", socket))
+    }
 }
 
 // TODO consider moving inside impl TCP
