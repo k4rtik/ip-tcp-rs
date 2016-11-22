@@ -226,6 +226,21 @@ pub fn recv_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: b
     debug!("bytes written: {:?}", bytes);
 }
 
+fn shutdown_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, mode: String) {
+    info!("Shutting down...");
+    let mut m = 1;
+    if mode == "read" {
+        m = 2;
+    }
+    if mode == "both" {
+        m = 3;
+    }
+    match tcp::v_shutdown(tcp_ctx, socket, m) {
+        Ok(_) => println!("Shutdown successful!"),
+        Err(e) => println!("Shutdown failed! {:?}", e),
+    }
+}
+
 #[allow(unknown_lints)]
 #[allow(cyclomatic_complexity)]
 fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
@@ -390,10 +405,16 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                         }
                     }
                     "shutdown" => {
-                        if cmd_vec.len() != 3 {
+                        if cmd_vec.len() < 2 {
                             println!("Missing parameters!");
                         } else {
-                            println!("Shutting down socket...");
+                            let socket = cmd_vec[1].parse::<usize>().unwrap();
+                            if cmd_vec.len() == 3 {
+                                let mode = cmd_vec[2].parse::<String>().unwrap();
+                                shutdown_cmd(&tcp_ctx, socket, mode);
+                            } else {
+                                shutdown_cmd(&tcp_ctx, socket, "write".to_string());
+                            }
                         }
                     }
                     "close" => {
