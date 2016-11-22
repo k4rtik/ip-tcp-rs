@@ -490,35 +490,35 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
 }
 
 // TODO consider moving inside one of impl TCP or TCB
-pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) -> usize {
+pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) -> Vec<u8> {
     let tcp = &mut *tcp_ctx.write().unwrap();
     match tcp.tc_blocks.get(&socket) {
         Some(tcb) => {
             let tcb = &mut (*tcb.write().unwrap());
             if (tcb.read_nxt + tcb.irs + size as u32) < tcb.rcv_nxt {
                 let i = tcb.read_nxt as usize;
-                println!("payload: {}",
-                         String::from_utf8_lossy(&tcb.rcv_buffer[i..i + size]));
+                debug!("payload: {}",
+                       String::from_utf8_lossy(&tcb.rcv_buffer[i..i + size]));
                 tcb.read_nxt += size as u32;
                 tcb.rcv_wnd += size as u16;
                 debug!("rcv_wnd = {:?}", tcb.rcv_wnd);
-                size
+                tcb.rcv_buffer[i..i + size].to_vec()
             } else {
                 let i = tcb.read_nxt as usize;
                 let sz: usize = (tcb.rcv_nxt - (tcb.read_nxt + tcb.irs) - 1) as usize;
                 if sz > 0 {
                     debug!("i: {} i+sz: {}", i, i + sz);
                     trace!("{:?}", &tcb.rcv_buffer[0..20]);
-                    println!("payload: {}",
-                             String::from_utf8_lossy(&tcb.rcv_buffer[i..i + sz]));
+                    debug!("payload: {}",
+                           String::from_utf8_lossy(&tcb.rcv_buffer[i..i + sz]));
                     tcb.read_nxt += sz as u32;
                     tcb.rcv_wnd += sz as u16;
                     debug!("rcv_wnd = {:?}", tcb.rcv_wnd);
                 }
-                sz
+                tcb.rcv_buffer[i..i + sz].to_vec()
             }
         }
-        None => 0,
+        None => Vec::new(),
     }
 }
 

@@ -180,17 +180,23 @@ pub fn recv_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: b
     info!("Receiving...");
     info!("Size req: {:?}", size);
     let mut bytes = 0;
+    let mut data_recv = Vec::new();
     if block {
         loop {
-            bytes += tcp::v_read(tcp_ctx, socket, size - bytes);
+            data_recv.append(&mut tcp::v_read(tcp_ctx, socket, size - bytes));
             // debug!("bytes written: {:?}", bytes);
+            if data_recv.len() > bytes {
+                bytes += data_recv.len();
+            }
             if bytes >= size {
+                debug!("bytes written: {:?}", bytes);
                 break;
             }
         }
     } else {
-        bytes = tcp::v_read(tcp_ctx, socket, size);
+        data_recv.append(&mut tcp::v_read(tcp_ctx, socket, size));
     }
+    debug!("Data recvd: {:?}", String::from_utf8_lossy(&data_recv));
     debug!("bytes written: {:?}", bytes);
 }
 
