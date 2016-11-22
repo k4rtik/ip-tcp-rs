@@ -590,8 +590,7 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
 
 // TODO consider moving inside impl TCP
 pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, pkt: SegmentIpParams) -> Result<(), String> {
-    let tcp = &mut *tcp_ctx.write().unwrap();
-    let mut four_tup: FourTup;
+    let four_tup: FourTup;
     {
         let segment = TcpPacket::new(&pkt.pkt_buf).unwrap();
         four_tup = FourTup {
@@ -601,6 +600,7 @@ pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, pkt: SegmentIpParams) -> Result<(), Str
             dst_port: segment.get_source(),
         };
     }
+    let tcp = &(*tcp_ctx.read().unwrap());
     match tcp.fourtup_to_sock.get(&four_tup) {
         Some(sock) => {
             match tcp.sock_to_sender.get(sock) {
@@ -612,13 +612,11 @@ pub fn demux(tcp_ctx: &Arc<RwLock<TCP>>, pkt: SegmentIpParams) -> Result<(), Str
             }
         }
         None => {
-            {
-                four_tup = FourTup {
-                    dst_ip: "0.0.0.0".parse::<Ipv4Addr>().unwrap(),
-                    dst_port: 0,
-                    ..four_tup
-                };
-            }
+            let four_tup = FourTup {
+                dst_ip: "0.0.0.0".parse::<Ipv4Addr>().unwrap(),
+                dst_port: 0,
+                ..four_tup
+            };
             match tcp.fourtup_to_sock.get(&four_tup) {
                 Some(sock) => {
                     match tcp.sock_to_sender.get(sock) {
