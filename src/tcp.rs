@@ -25,6 +25,7 @@ pub struct TCP {
     tc_blocks: HashMap<usize, Arc<RwLock<TCB>>>,
     free_sockets: Vec<usize>,
     invalidated_socks: HashSet<usize>,
+    unreadable_socks: HashSet<usize>,
     bound_ports: HashSet<(Ipv4Addr, u16)>,
     fourtup_to_sock: HashMap<FourTup, usize>,
     sock_to_sender: HashMap<usize, Arc<MsQueue<Message>>>,
@@ -188,6 +189,7 @@ impl TCP {
             tc_blocks: HashMap::new(),
             free_sockets: Vec::new(),
             invalidated_socks: HashSet::new(),
+            unreadable_socks: HashSet::new(),
             bound_ports: HashSet::new(),
             fourtup_to_sock: HashMap::new(),
             sock_to_sender: HashMap::new(),
@@ -506,6 +508,8 @@ pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) -> Vec<u8>
     // if (*tcp_ctx.read().unwrap()).invalidated_socks.contains(&socket) {
     //    return Err(format!("error: socket {:?} is invalidated", socket));
     //
+    // if (*tcp_ctx.read().unwrap()).unreadable_socks.contains(&socket) {
+    //    return Err(format!("error: socket {:?} is not readable anymore", socket));
 
     let tcp = &mut *tcp_ctx.write().unwrap();
     match tcp.tc_blocks.get(&socket) {
@@ -552,6 +556,34 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, message: &[u8]) -> Res
             Ok(message.len())
         }
         None => Err("ENOTSOCK: No TCB associated with this connection!".to_owned()),
+    }
+}
+
+pub fn v_shutdown(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, mode: usize) -> Result<(), String> {
+    if (*tcp_ctx.read().unwrap()).invalidated_socks.contains(&socket) {
+        return Err(format!("error: socket {:?} is invalidated", socket));
+    }
+
+    match mode {
+        1 => {
+            // write
+            Ok(())
+        }
+        2 => {
+            // read
+            let tcp = &mut *tcp_ctx.write().unwrap();
+            if tcp.tc_blocks.get(&socket).is_some() {
+                tcp.unreadable_socks.insert(socket);
+                Ok(())
+            } else {
+                Err(format!("No TCB exists for given socket: {:?}", socket))
+            }
+        }
+        3 => {
+            // both
+            Ok(())
+        }
+        _ => Err(format!("invalid type: {:?}", mode)),
     }
 }
 
