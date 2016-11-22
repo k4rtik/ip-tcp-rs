@@ -168,12 +168,8 @@ pub fn connect_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
     }
 }
 
-pub fn send_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
-                dl_ctx: &Arc<RwLock<DataLink>>,
-                rip_ctx: &Arc<RwLock<RipCtx>>,
-                socket: usize,
-                message: String) {
-    let bytes = tcp::v_write(tcp_ctx, dl_ctx, rip_ctx, socket, message.as_bytes());
+pub fn send_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, message: String) {
+    let bytes = tcp::v_write(tcp_ctx, socket, message.as_bytes());
     debug!("bytes written: {:?}", bytes);
 }
 
@@ -194,7 +190,7 @@ pub fn send_file_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
                     let mut buf = String::new();
                     let bytes = f.read_line(&mut buf).expect("Parse error");
                     debug!("buf: {:?}", buf);
-                    let bytes = tcp::v_write(tcp_ctx, dl_ctx, rip_ctx, sock, buf.as_bytes());
+                    let bytes = tcp::v_write(tcp_ctx, sock, buf.as_bytes());
                     debug!("bytes written: {:?}", bytes);
                 }
                 Err(e) => error!("v_connect() failed: {}", e),
@@ -344,7 +340,7 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                             let socket = cmd_vec[1].parse::<usize>().unwrap();
                             let string = cmd_vec[2];
                             let message = string.to_string();
-                            send_cmd(&tcp_ctx, &dl_ctx, &rip_ctx, socket, message);
+                            send_cmd(&tcp_ctx, socket, message);
                         }
                     }
                     "recv" | "r" => {
