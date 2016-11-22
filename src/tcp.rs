@@ -96,7 +96,6 @@ struct TCB {
     snd_buffer: Vec<u8>, // user's send buffer
     buf_write_next: u32,
     rcv_buffer: Vec<u8>, // user's receive buffer
-    buf_read_next: u32,
     cur_segment: Option<TcpPacket<'static>>, // current segment
     retransmit_q: VecDeque<TcpPacket<'static>>, // retransmit queue, TODO ipParams needed?
 
@@ -137,7 +136,6 @@ impl TCB {
             snd_buffer: vec![0; TCP_MAX_WINDOW_SZ],
             buf_write_next: 0,
             rcv_buffer: vec![0; TCP_MAX_WINDOW_SZ],
-            buf_read_next: 0,
             cur_segment: None,
             retransmit_q: VecDeque::new(),
 
