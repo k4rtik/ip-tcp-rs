@@ -539,6 +539,16 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>,
             Some(tcb) => {
                 let tcb = &mut (*tcb.write().unwrap());
                 if tcb.snd_wnd > ((tcb.snd_nxt - tcb.iss + message.len() as u32) as u16) {
+                    let start = tcb.snd_nxt - tcb.iss - 1;
+                    let mut j = 0;
+                    for i in start..(start + message.len() as u32) {
+                        if j > message.len() {
+                            break;
+                        }
+                        tcb.snd_buffer[i as usize] = message[j as usize];
+                        j += 1;
+                    }
+                    debug!("snd_buff: {:?}", &tcb.snd_buffer[0..20]);
                     t_params = TcpParams {
                         src_port: tcb.local_port,
                         dst_port: tcb.remote_port,
