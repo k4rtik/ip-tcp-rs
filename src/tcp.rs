@@ -758,12 +758,14 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                 // regular socket
                 tcb.snd_wnd = pkt_window;
                 debug!("snd_wnd = {:?}", tcb.snd_wnd);
+
+                use self::Status::*;
                 match tcb.state {
-                    Status::Closed => {
+                    Closed => {
                         // Pg. 65 in RFC 793
                         info!("packet recvd on Closed TCB");
                     }
-                    Status::Listen => {
+                    Listen => {
                         // Pg. 65-66 in RFC 793
                         info!("packet recvd on TCB in Listen State");
                         debug!("found matching listening socket");
@@ -780,7 +782,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                             ntcb.snd_wnd = pkt_window;
                             ntcb.snd_nxt = ntcb.iss + 1;
                             ntcb.snd_una = ntcb.iss;
-                            ntcb.state = Status::SynRcvd;
+                            ntcb.state = SynRcvd;
 
                             {
                                 let tcp = &mut (*tcp_ctx.write().unwrap());
@@ -800,21 +802,21 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                             tcb.conns_map.insert((dip, dp), ntcb);
                         } else if pkt_flags == TcpFlags::ACK {
                             if let Some(ntcb) = tcb.conns_map.get_mut(&(dip, dp)) {
-                                if ntcb.state == Status::SynRcvd {
-                                    ntcb.state = Status::Estab;
+                                if ntcb.state == SynRcvd {
+                                    ntcb.state = Estab;
                                 }
                             }
                             if let Some(ntcb) = tcb.conns_map.remove(&(dip, dp)) {
                                 // TODO check for correct ack
                                 if let Some(ref qs) = tcb.qs {
-                                    if ntcb.state == Status::Estab {
+                                    if ntcb.state == Estab {
                                         qs.push(ntcb);
                                     }
                                 }
                             }
                         }
                     }
-                    Status::SynSent => {
+                    SynSent => {
                         if pkt_flags & TcpFlags::ACK == TcpFlags::ACK {
                             // Pg. 66 in RFC 793
                             if pkt_ack <= tcb.iss || pkt_ack > tcb.snd_nxt {
@@ -830,7 +832,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                             tcb.snd_una = pkt_ack;
                             // TODO discard ack'ed segments from retransmit_q
                             if tcb.snd_una > tcb.iss {
-                                tcb.state = Status::Estab;
+                                tcb.state = Estab;
                                 println!("v_connect() returned 0");
 
                                 t_params = TcpParams {
@@ -844,7 +846,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                 build_tcp_header(t_params, lip, dip, None, &mut pkt_buf);
                                 should_send_packet = true;
                             } else {
-                                tcb.state = Status::SynRcvd;
+                                tcb.state = SynRcvd;
                                 println!("switching from SynSent to SynRcvd");
 
                                 t_params = TcpParams {
@@ -909,7 +911,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                     // Pg. 71 in RFC 793
                                     warn!("received SYN in the window, discarding TCB");
                                     println!("connection reset");
-                                    tcb.state = Status::Closed;
+                                    tcb.state = Closed;
                                     {
                                         let tcp = &mut (*tcp_ctx.write().unwrap());
                                         // TODO think about exiting the thread here
@@ -921,15 +923,14 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
 
                                 if pkt_flags & TcpFlags::ACK == TcpFlags::ACK {
                                     match tcb.state {
-                                        Status::SynRcvd => {
+                                        SynRcvd => {
                                             // Pg. 72 in RFC 793
                                             if tcb.snd_una <= pkt_ack && pkt_ack <= tcb.snd_nxt {
-                                                tcb.state = Status::Estab;
+                                                tcb.state = Estab;
                                                 println!("v_connect() returned 0");
                                             }
                                         }
-                                        Status::Estab | Status::FinWait1 | Status::FinWait2 |
-                                        Status::CloseWait | Status::Closing => {
+                                        Estab | FinWait1 | FinWait2 | CloseWait | Closing => {
                                             if tcb.snd_una < pkt_ack && pkt_ack <= tcb.snd_nxt {
                                                 tcb.snd_una = pkt_ack;
                                                 // TODO discard old segments from retransmit_q
@@ -967,17 +968,16 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
 
                                             // TODO more specific processing, see pg. 73
                                             match tcb.state {
-                                                // Status::FinWait1 => {}
-                                                // Status::FinWait2 => {}
-                                                // Status::CloseWait => {}
-                                                // Status::Closing => {}
+                                                // FinWait1 => {}
+                                                // FinWait2 => {}
+                                                // CloseWait => {}
+                                                // Closing => {}
                                                 _ => {}
                                             }
 
                                             // TODO payload processing, see pg. 74
                                             match tcb.state {
-                                                Status::Estab | Status::FinWait1 |
-                                                Status::FinWait2 => {
+                                                Estab | FinWait1 | FinWait2 => {
                                                     // TODO put the received segment in the right
                                                     // place in the buffer
                                                     if tcb.rcv_nxt - tcb.irs + seg_len <=
@@ -1015,8 +1015,8 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                                 _ => {}
                                             }
                                         }
-                                        // Status::LastAck => {}
-                                        // Status::TimeWait => {}
+                                        // LastAck => {}
+                                        // TimeWait => {}
                                         _ => {}
                                     }
 
