@@ -474,7 +474,7 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
 }
 
 // TODO consider moving inside one of impl TCP or TCB
-pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: bool) -> usize {
+pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) -> usize {
     let tcp = &mut *tcp_ctx.write().unwrap();
     match tcp.tc_blocks.get(&socket) {
         Some(tcb) => {
@@ -487,11 +487,19 @@ pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: boo
                 tcb.rcv_wnd += size as u16;
                 debug!("rcv_wnd = {:?}", tcb.rcv_wnd);
                 size
-            } else if !block {
-                warn!("not enough bytes in recv buffer");
-                0
             } else {
-                0
+                let i = tcb.read_nxt as usize;
+                let sz: usize = (tcb.rcv_nxt - (tcb.read_nxt + tcb.irs) - 1) as usize;
+                if sz > 0 {
+                    debug!("i: {} i+sz: {}", i, i + sz);
+                    debug!("{:?}", &tcb.rcv_buffer[0..10]);
+                    println!("payload: {}",
+                             String::from_utf8_lossy(&tcb.rcv_buffer[i..i + sz]));
+                    tcb.read_nxt += sz as u32;
+                    tcb.rcv_wnd += sz as u16;
+                    debug!("rcv_wnd = {:?}", tcb.rcv_wnd);
+                }
+                sz
             }
         }
         None => 0,
@@ -632,7 +640,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                 let segment = pkt.pkt_buf;
                 let ip_params = pkt.params;
                 let pkt = TcpPacket::new(&segment).unwrap();
-                trace!("{:?}", pkt);
+                debug!("{:?}", pkt);
                 // TODO verify checksum
                 let pkt_seq_num = pkt.get_sequence();
                 let pkt_ack = pkt.get_acknowledgement();

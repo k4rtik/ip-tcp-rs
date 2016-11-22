@@ -176,9 +176,20 @@ pub fn send_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
     debug!("bytes written: {:?}", bytes);
 }
 
-pub fn recv_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) {
+pub fn recv_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: bool) {
     info!("Receiving...");
-    let bytes = tcp::v_read(tcp_ctx, socket, size, false);
+    let mut bytes = 0;
+    if block {
+        loop {
+            bytes += tcp::v_read(tcp_ctx, socket, size);
+            // debug!("bytes written: {:?}", bytes);
+            if bytes >= size {
+                break;
+            }
+        }
+    } else {
+        bytes = tcp::v_read(tcp_ctx, socket, size);
+    }
     debug!("bytes written: {:?}", bytes);
 }
 
@@ -300,12 +311,20 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                         }
                     }
                     "recv" | "r" => {
-                        if cmd_vec.len() != 3 {
-                            println!("Missing parameters!");
+                        if cmd_vec.len() > 4 {
+                            println!("Unknown parameters!");
                         } else {
                             let socket = cmd_vec[1].parse::<usize>().unwrap();
                             let size = cmd_vec[2].parse::<usize>().unwrap();
-                            recv_cmd(&tcp_ctx, socket, size);
+                            if cmd_vec.len() == 4 {
+                                if cmd_vec[3].to_string() == "y" {
+                                    recv_cmd(&tcp_ctx, socket, size, true);
+                                } else {
+                                    recv_cmd(&tcp_ctx, socket, size, false);
+                                }
+                            } else {
+                                recv_cmd(&tcp_ctx, socket, size, false);
+                            }
                         }
                     }
                     "sendfile" | "sf" => {

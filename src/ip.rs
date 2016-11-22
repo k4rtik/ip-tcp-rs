@@ -141,6 +141,7 @@ fn handle_packet(dl_ctx: &Arc<RwLock<DataLink>>,
                         print_pkt_contents(pkt.to_immutable());
                     }
                     IpNextHeaderProtocol(6) => {
+                        // debug!("{:?}", pkt);
                         match tcp::demux(tcp_ctx.unwrap(),
                                          tcp::SegmentIpParams {
                                              pkt_buf: pkt.payload().to_vec(),
