@@ -127,8 +127,8 @@ impl TCB {
             remote_port: 0,
             state: Status::Closed,
 
-            snd_buffer: Vec::new(),
-            rcv_buffer: Vec::new(),
+            snd_buffer: vec![0; TCP_MAX_WINDOW_SZ],
+            rcv_buffer: vec![0; TCP_MAX_WINDOW_SZ],
             cur_segment: None,
             retransmit_q: VecDeque::new(),
 
@@ -508,7 +508,7 @@ pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) -> usize {
                 let sz: usize = (tcb.rcv_nxt - (tcb.read_nxt + tcb.irs) - 1) as usize;
                 if sz > 0 {
                     debug!("i: {} i+sz: {}", i, i + sz);
-                    debug!("{:?}", &tcb.rcv_buffer[0..10]);
+                    trace!("{:?}", &tcb.rcv_buffer[0..20]);
                     println!("payload: {}",
                              String::from_utf8_lossy(&tcb.rcv_buffer[i..i + sz]));
                     tcb.read_nxt += sz as u32;
@@ -989,9 +989,21 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                                         debug!("Appending to socket: {:?}, {:?}",
                                                                tcb.remote_ip,
                                                                tcb.remote_port);
-                                                        tcb.rcv_buffer
-                                                            .append(&mut pkt.payload()
-                                                                .to_vec());
+                                                        let mut j = 0;
+                                                        let start = tcb.rcv_nxt - tcb.irs - 1;
+                                                        trace!("rcv_nxt {:?} pkt_len: {:?}",
+                                                               start,
+                                                               seg_len);
+                                                        for i in start..start + seg_len {
+                                                            if j == seg_len {
+                                                                break;
+                                                            }
+                                                            tcb.rcv_buffer[i as usize] =
+                                                                pkt.payload()[j as usize];
+                                                            j += 1;
+                                                        }
+                                                        trace!("rcv_buff: {:?}",
+                                                               &tcb.rcv_buffer[0..20]);
                                                         tcb.rcv_wnd -= seg_len as u16;
                                                         debug!("rcv_wnd = {:?}", tcb.rcv_wnd);
                                                         tcb.rcv_nxt = pkt_seq_num + seg_len;

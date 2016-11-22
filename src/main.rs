@@ -178,10 +178,11 @@ pub fn send_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
 
 pub fn recv_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: bool) {
     info!("Receiving...");
+    info!("Size req: {:?}", size);
     let mut bytes = 0;
     if block {
         loop {
-            bytes += tcp::v_read(tcp_ctx, socket, size);
+            bytes += tcp::v_read(tcp_ctx, socket, size - bytes);
             // debug!("bytes written: {:?}", bytes);
             if bytes >= size {
                 break;
