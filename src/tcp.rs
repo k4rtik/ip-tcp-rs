@@ -970,7 +970,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                     });
 
                                     pkt_buf = pkt.pkt_buf.clone();
-                                    ip_params = ip_params.clone();
+                                    ip_params = pkt.params.clone();
 
                                     should_send_packet = true;
                                 }
