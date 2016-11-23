@@ -1018,7 +1018,6 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                     }
                     Listen => {
                         // Pg. 65-66 in RFC 793
-                        info!("packet recvd on TCB in Listen State");
                         debug!("found matching listening socket");
                         // new connection
                         if pkt_flags == TcpFlags::SYN {
@@ -1056,6 +1055,8 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                 if ntcb.state == SynRcvd {
                                     ntcb.state = Estab;
                                 }
+                            } else {
+                                info!("packet recvd on TCB in Listen State with ACK");
                             }
                             if let Some(ntcb) = tcb.conns_map.remove(&(dip, dp)) {
                                 // TODO check for correct ack
@@ -1065,6 +1066,8 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                     }
                                 }
                             }
+                        } else {
+                            info!("packet recvd on TCB in Listen State, but not SYN or ACK (for child)");
                         }
                     }
                     SynSent => {
