@@ -1,17 +1,18 @@
-use std::collections::{HashMap, HashSet};
 use std::collections::vec_deque::VecDeque;
-use std::sync::{Arc, RwLock};
+use std::collections::{HashMap, HashSet};
 use std::net::Ipv4Addr;
-use std::thread;
 use std::str;
+use std::sync::{Arc, RwLock};
+use std::thread;
+use std::time::Duration;
 
 use bytes::{Buf, BufMut};
 use bytes_more::RingBuf;
 use crossbeam::sync::MsQueue;
-use pnet_macros_support::types::*;
-use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpPacket, TcpFlags};
-use pnet::packet::Packet;
 use pnet::packet::FromPacket;
+use pnet::packet::Packet;
+use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpPacket, TcpFlags};
+use pnet_macros_support::types::*;
 use rand;
 
 use datalink::DataLink;
@@ -955,7 +956,9 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                         // TODO see pg. 77
                     }
                     TimeWaitTO => {
-                        // TODO see pg. 77
+                        let tcb = &mut (*tcb_ref.write().unwrap());
+                        tcb.state = Status::Closed;
+                        break; // delete TCB
                     }
                 }
             }
@@ -1254,7 +1257,18 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                             }
                                         }
                                         // LastAck => {}
-                                        // TimeWait => {}
+                                        TimeWait => {
+                                            if let Some(ref qs) = tcb.qr {
+                                                let qs = qs.clone();
+                                                thread::spawn(move || {
+                                                    let msl = Duration::from_secs(2 * 60);
+                                                    thread::sleep(msl);
+                                                    qs.push(Message::Timeout {
+                                                        to: TimeoutKind::TimeWaitTO,
+                                                    });
+                                                });
+                                            }
+                                        }
                                         _ => {}
                                     }
 
