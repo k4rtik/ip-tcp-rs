@@ -26,6 +26,7 @@ use std::net::Ipv4Addr;
 use std::sync::{Arc, RwLock};
 use std::thread;
 use std::io::Read;
+use std::io::Write;
 
 use datalink::{DataLink, Interface, SocketAddrInterface, RouteInfo};
 use rip::{RipCtx, Route};
@@ -206,6 +207,58 @@ pub fn send_file_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
         Err(e) => error!("v_socket() failed: {}", e),
     }
 
+}
+
+
+pub fn recv_file_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
+                     dl_ctx: &Arc<RwLock<DataLink>>,
+                     rip_ctx: &Arc<RwLock<RipCtx>>,
+                     fl: String,
+                     port: u16) {
+    info!("Receiving file...");
+    let s = tcp::v_socket(tcp_ctx, dl_ctx, rip_ctx);
+    {
+        let tcp = &mut (*tcp_ctx.write().unwrap());
+        match s {
+            Ok(ref sock) => {
+                match tcp.v_bind(dl_ctx, *sock, None, port) {
+                    Ok(_) => {
+                        match tcp.v_listen(dl_ctx, *sock) {
+                            Ok(_) => trace!("v_listen() succeeded"),
+                            Err(e) => error!("v_listen: {}", e),
+                        }
+                    }
+
+                    Err(e) => error!("v_bind: {}", e),
+                }
+            }
+            Err(ref e) => error!("v_socket: {}", e),
+        }
+    }
+    let sock = s.unwrap();
+    let dl_ctx = dl_ctx.clone();
+    let rip_ctx = rip_ctx.clone();
+    let tcp_ctx = tcp_ctx.clone();
+    thread::spawn(move || {
+        let mut buffer = File::create(fl).unwrap();
+        match tcp::v_accept(tcp_ctx.clone(), dl_ctx.clone(), rip_ctx.clone(), sock, None) {
+            Ok(socket) => {
+                loop {
+                    match tcp::v_read(&tcp_ctx, socket, 1024) {
+                        Ok(mut data) => {
+                            buffer.write_all(&data);
+                        }
+                        Err(e) => {
+                            if e == "Connection Closed!" {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => error!("v_accept: {}", e),
+        }
+    });
 }
 
 pub fn recv_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: bool) {
@@ -404,7 +457,9 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                         if cmd_vec.len() != 3 {
                             println!("Missing parameters!");
                         } else {
-                            println!("Receiving file...");
+                            let file_name = cmd_vec[1].to_string();
+                            let port = cmd_vec[2].parse::<u16>().unwrap();
+                            // recv_file_cmd(&tcp_ctx, &dl_ctx, &rip_ctx, file_name, port);
                         }
                     }
                     "window" => {

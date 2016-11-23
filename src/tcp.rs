@@ -510,27 +510,25 @@ pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) -> Result<
     match tcp.tc_blocks.get(&socket) {
         Some(tcb) => {
             let tcb = &mut (*tcb.write().unwrap());
+            if tcb.state == Status::Closed {
+                return Err("Connection Closed!".to_owned());
+            }
+            let mut sz: usize = 0;
             if (tcb.rcv_buffer.position() as u32 + tcb.irs + size as u32) < tcb.rcv_nxt {
-                tcb.rcv_wnd += size as u16;
-                debug!("rcv_wnd = {:?}", tcb.rcv_wnd);
-                let mut dst = vec![0; size];
-                tcb.rcv_buffer.copy_to_slice(&mut dst);
-                Ok(dst)
+                sz = size;
             } else {
                 // insufficient data
-                let sz: usize = (tcb.rcv_nxt - (tcb.rcv_buffer.position() as u32 + tcb.irs) -
-                                 1) as usize;
-                if sz > 0 {
-                    tcb.rcv_wnd += sz as u16;
-                    debug!("rcv_wnd = {:?}", tcb.rcv_wnd);
-                    let mut dst = vec![0; sz];
-                    tcb.rcv_buffer.copy_to_slice(&mut dst);
-                    Ok(dst)
-                } else {
-                    // insufficient data
-                    Ok(vec![])
-                }
+                sz = (tcb.rcv_nxt - (tcb.rcv_buffer.position() as u32 + tcb.irs) - 1) as usize;
             }
+            // debug!("sz: {:?}", sz);
+            tcb.rcv_wnd += sz as u16;
+            // debug!("rcv_wnd = {:?}", tcb.rcv_wnd);
+            let mut dst = vec![0; sz];
+            if sz > 0 {
+                tcb.rcv_buffer.copy_to_slice(&mut dst);
+                return Ok(dst);
+            }
+            Ok(vec![])
         }
         None => Err("No matching TCB found!".to_owned()),
     }
@@ -789,11 +787,18 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                             }
                             Estab | CloseWait => {
                                 // fill the send buffer as above
-                                //if tcb.snd_wnd >
-                                //   ((tcb.snd_nxt - tcb.iss + buffer.len() as u32) as u16) {
+                                if tcb.snd_wnd >
+                                   ((tcb.snd_nxt - tcb.iss + buffer.len() as u32) as u16) {
 
                                     if tcb.snd_buffer.remaining_write() > buffer.len() {
                                         tcb.snd_buffer.copy_from_slice(&buffer);
+                                    } else {
+                                        error!("insufficient resources");
+                                    }
+                                    if tcb.snd_buffer.remaining_write() > buffer.len() {
+                                        debug!("snd_buffer {:?}", tcb.snd_buffer);
+                                        tcb.snd_buffer.copy_from_slice(&buffer);
+                                        debug!("snd_buffer {:?}", tcb.snd_buffer);
                                     } else {
                                         error!("insufficient resources");
                                     }
@@ -831,9 +836,9 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                     tcb.snd_wnd -= buffer.len() as u16;
 
                                     should_send_packet = true;
-                                //} else {
-                                //    error!("insufficient resources");
-                               // }
+                                } else {
+                                    error!("insufficient resources");
+                                }
                             }
                             _ => {
                                 error!("connection closing");
