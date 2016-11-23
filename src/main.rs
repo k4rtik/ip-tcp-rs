@@ -190,21 +190,15 @@ pub fn send_file_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
                     info!("v_connect() put new TCB in SynSent state");
                     let mut f = BufReader::new(File::open(fl).unwrap());
                     let mut buf = vec![0; 1024];
-                    let mut bytes = 0;
-                    loop {
-                        match f.read(&mut buf) {
-                            Ok(bytes_read) => {
-                                if bytes_read == 0 {
-                                    break;
-                                }
-                                trace!("buf: {:?}", buf);
-                                let bytes = tcp::v_write(tcp_ctx, sock, &buf[..bytes_read]);
-                                trace!("bytes written: {:?}", bytes);
-                            }
-                            Err(_) => break,
+                    while let Ok(bytes_read) = f.read(&mut buf) {
+                        if bytes_read == 0 {
+                            break;
                         }
+                        trace!("buf: {:?}", buf);
+                        let bytes = tcp::v_write(tcp_ctx, sock, &buf[..bytes_read]);
+                        trace!("bytes written: {:?}", bytes);
                     }
-		    tcp::v_close(tcp_ctx, sock);
+                    tcp::v_close(tcp_ctx, sock).unwrap();
                 }
                 Err(e) => error!("v_connect() failed: {}", e),
             }
