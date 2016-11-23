@@ -952,11 +952,14 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                 let tcb = &mut (*tcb_ref.write().unwrap());
                 match to {
                     Retransmission { seq_num } => {
+                        let mut pop = false;
+                        // TODO check if need to iterate through the whole retransmit_q
                         if let Some(pkt) = tcb.retransmit_q.front() {
                             let segment = TcpPacket::new(&pkt.pkt_buf).unwrap();
                             if segment.get_sequence() == seq_num {
-                                // TODO check if need to iterate through the whole retransmit_q
-                                if let Some(ref qs) = tcb.qr {
+                                if tcb.snd_una > seq_num {
+                                    pop = true;
+                                } else if let Some(ref qs) = tcb.qr {
                                     let qs = qs.clone();
                                     thread::spawn(move || {
                                         let rto = Duration::from_millis(1);
@@ -965,9 +968,17 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                             to: TimeoutKind::Retransmission { seq_num: seq_num },
                                         });
                                     });
+
+                                    pkt_buf = pkt.pkt_buf.clone();
+                                    ip_params = ip_params.clone();
+
+                                    should_send_packet = true;
                                 }
                             }
                         };
+                        if pop {
+                            tcb.retransmit_q.pop_front();
+                        }
                     }
                     TimeWaitTO => {
                         tcb.state = Status::Closed;
