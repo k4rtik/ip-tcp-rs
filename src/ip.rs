@@ -14,7 +14,7 @@ use tcp::{self, TCP};
 
 const IPV4_HEADER_LEN: usize = 20;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct IpParams {
     pub src: Ipv4Addr,
     pub dst: Ipv4Addr,

@@ -63,7 +63,7 @@ pub enum UserCallKind {
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum TimeoutKind {
-    Retransmission,
+    Retransmission { seq_num: u32 },
     TimeWaitTO,
 }
 
@@ -98,8 +98,7 @@ struct TCB {
 
     snd_buffer: RingBuf, // user's send buffer
     rcv_buffer: RingBuf, // user's receive buffer
-    cur_segment: Option<TcpPacket<'static>>, // current segment
-    retransmit_q: VecDeque<TcpPacket<'static>>, // retransmit queue, TODO ipParams needed?
+    retransmit_q: VecDeque<SegmentIpParams>,
 
     // Send Sequence Variables
     snd_una: u32, // send unacknowledged
@@ -136,7 +135,6 @@ impl TCB {
 
             snd_buffer: RingBuf::with_capacity(TCP_MAX_WINDOW_SZ + 1),
             rcv_buffer: RingBuf::with_capacity(TCP_MAX_WINDOW_SZ + 1),
-            cur_segment: None,
             retransmit_q: VecDeque::new(),
 
             snd_una: 0,
@@ -951,12 +949,27 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
             Timeout { to } => {
                 use self::TimeoutKind::*;
                 #[allow(match_same_arms)]
+                let tcb = &mut (*tcb_ref.write().unwrap());
                 match to {
-                    Retransmission => {
-                        // TODO see pg. 77
+                    Retransmission { seq_num } => {
+                        if let Some(pkt) = tcb.retransmit_q.front() {
+                            let segment = TcpPacket::new(&pkt.pkt_buf).unwrap();
+                            if segment.get_sequence() == seq_num {
+                                // TODO check if need to iterate through the whole retransmit_q
+                                if let Some(ref qs) = tcb.qr {
+                                    let qs = qs.clone();
+                                    thread::spawn(move || {
+                                        let rto = Duration::from_millis(1);
+                                        thread::sleep(rto);
+                                        qs.push(Message::Timeout {
+                                            to: TimeoutKind::Retransmission { seq_num: seq_num },
+                                        });
+                                    });
+                                }
+                            }
+                        };
                     }
                     TimeWaitTO => {
-                        let tcb = &mut (*tcb_ref.write().unwrap());
                         tcb.state = Status::Closed;
                         break; // delete TCB
                     }
@@ -1297,17 +1310,40 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
             }
         }
         if should_send_packet {
-            let segment = TcpPacket::new(&pkt_buf[..]).unwrap();
-            ip::send(&dl_ctx,
-                     Some(&rip_ctx),
-                     Some(&tcp_ctx),
-                     ip_params,
-                     TCP_PROT,
-                     rip::INFINITY,
-                     segment.packet().to_vec(),
-                     0,
-                     true)
-                .unwrap();
+            let seq_num;
+            {
+                let segment = TcpPacket::new(&pkt_buf[..]).unwrap();
+                ip::send(&dl_ctx,
+                         Some(&rip_ctx),
+                         Some(&tcp_ctx),
+                         ip_params.clone(),
+                         TCP_PROT,
+                         rip::INFINITY,
+                         segment.packet().to_vec(),
+                         0,
+                         true)
+                    .unwrap();
+
+                seq_num = segment.get_sequence();
+            }
+            if ip_params.len > TcpPacket::minimum_packet_size() {
+                // segment containing data
+                let tcb = &mut (*tcb_ref.write().unwrap());
+                tcb.retransmit_q.push_back(SegmentIpParams {
+                    pkt_buf: pkt_buf,
+                    params: ip_params,
+                });
+                if let Some(ref qs) = tcb.qr {
+                    let qs = qs.clone();
+                    thread::spawn(move || {
+                        let rto = Duration::from_millis(1);
+                        thread::sleep(rto);
+                        qs.push(Message::Timeout {
+                            to: TimeoutKind::Retransmission { seq_num: seq_num },
+                        });
+                    });
+                }
+            }
         }
     }
 }
