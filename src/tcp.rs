@@ -412,7 +412,8 @@ fn build_tcp_header(t_params: TcpParams,
     tcp_packet.set_destination(t_params.dst_port);
     tcp_packet.set_sequence(t_params.seq_num);
     tcp_packet.set_acknowledgement(t_params.ack_num);
-    tcp_packet.set_data_offset((TcpPacket::minimum_packet_size() / 4) as u4); // number of 32-bit words in header
+    // number of 32-bit words in header
+    tcp_packet.set_data_offset((TcpPacket::minimum_packet_size() / 4) as u4);
     tcp_packet.set_flags(t_params.flags);
     tcp_packet.set_window(t_params.window);
     if let Some(payload) = payload {
@@ -731,7 +732,8 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                 // TODO XXX test this code path
                                 tcb.remote_ip = dst_addr;
                                 tcb.remote_port = port;
-                                tcb.iss = rand::random::<u16>() as u32; // TODO see pg. 54 to confirm
+                                // TODO see pg. 54 to confirm
+                                tcb.iss = rand::random::<u16>() as u32;
 
                                 t_params = TcpParams {
                                     src_port: tcb.local_port,
@@ -1073,7 +1075,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                 }
                             }
                         } else {
-                            info!("packet recvd on TCB in Listen State, but not SYN or ACK (for child)");
+                            info!("pkt recvd in Listen State, but not SYN or ACK (for child)");
                         }
                     }
                     SynSent => {
@@ -1132,7 +1134,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                         debug!("incoming segment length: {}", seg_len);
                         if tcb.rcv_wnd == 0 {
                             if seg_len > 0 {
-                                warn!("Dropping packet, cannot accept with 0 window, sending ACK...");
+                                warn!("Dropping pkt, cant accept with 0 window, sending ACK...");
                                 t_params = TcpParams {
                                     src_port: tcb.local_port,
                                     dst_port: tcb.remote_port,
@@ -1212,7 +1214,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                             } else if pkt_ack < tcb.snd_una {
                                                 info!("ignoring duplicate ACK");
                                             } else if pkt_ack > tcb.snd_nxt {
-                                                warn!("Dropping segment, received too early, sending ACK");
+                                                warn!("Dropping segment, rcvd early, sending ACK");
                                                 // Send ACK
                                                 t_params = TcpParams {
                                                     src_port: tcb.local_port,
@@ -1250,7 +1252,9 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                                                tcb.remote_ip,
                                                                tcb.remote_port);
 
-                                                        tcb.rcv_buffer.copy_from_slice(&pkt.payload()[..seg_len as usize]);
+                                                        tcb.rcv_buffer
+                                                            .copy_from_slice(
+                                                                &pkt.payload()[..seg_len as usize]);
 
                                                         trace!("rcv_buff: {:?}", tcb.rcv_buffer);
                                                         tcb.rcv_wnd -= seg_len as u16;

@@ -221,7 +221,7 @@ pub fn recv_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: b
                         debug!("bytes written: {:?}", data_recv.len());
                         break;
                     }
-                } 
+                }
                 Err(e) => println!("{:?}", e),
             }
         }
