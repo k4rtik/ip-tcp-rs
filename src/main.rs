@@ -1,3 +1,5 @@
+extern crate bytes;
+extern crate bytes_more;
 extern crate clap;
 extern crate crossbeam;
 extern crate pretty_env_logger;

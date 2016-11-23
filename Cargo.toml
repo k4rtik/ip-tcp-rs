@@ -9,6 +9,8 @@ syntex = "0.42.*"
 pnet_macros = "*"
 
 [dependencies]
+bytes = { git = "https://github.com/carllerche/bytes", branch = "refactor" }
+bytes-more = { git = "https://github.com/carllerche/bytes-more" }
 crossbeam = "*"
 log = "*"
 pnet = "*"
