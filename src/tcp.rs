@@ -119,8 +119,9 @@ struct TCB {
     conns_map: HashMap<(Ipv4Addr, u16), TCB>,
     qs: Option<Arc<MsQueue<TCB>>>,
 
-    // connect response
-    connect_res: Arc<MsQueue<Result<(), String>>>,
+    // response channels
+    connect_resp: Arc<MsQueue<Result<(), String>>>,
+    write_resp: Arc<MsQueue<Result<(), String>>>,
 }
 
 impl TCB {
@@ -152,7 +153,8 @@ impl TCB {
             conns_map: HashMap::new(),
             qs: None,
 
-            connect_res: Arc::new(MsQueue::new()),
+            connect_resp: Arc::new(MsQueue::new()),
+            write_resp: Arc::new(MsQueue::new()),
         }
     }
 }
@@ -477,9 +479,9 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
         let tcp = &(*tcp_ctx.read().unwrap());
         let tcb = tcp.tc_blocks[&socket].clone();
         let tcb = &(*tcb.read().unwrap());
-        conn_qr = tcb.connect_res.clone();
+        conn_qr = tcb.connect_resp.clone();
 
-        match (*tcp_ctx.read().unwrap()).sock_to_sender.get(&socket) {
+        match tcp.sock_to_sender.get(&socket) {
             Some(qs) => {
                 qs.push(Message::UserCall {
                     call: UserCallKind::Open {
@@ -542,12 +544,30 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, message: &[u8]) -> Res
 
     trace!("Message: {:?}", message);
 
-    match (*tcp_ctx.read().unwrap()).sock_to_sender.get(&socket) {
-        Some(qs) => {
-            qs.push(Message::UserCall { call: UserCallKind::Send { buffer: message.to_vec() } });
-            Ok(message.len())
+    let write_qr: Arc<MsQueue<Result<(), String>>>;
+    {
+        let tcp = &(*tcp_ctx.read().unwrap());
+        let tcb = tcp.tc_blocks[&socket].clone();
+        let tcb = &(*tcb.read().unwrap());
+        write_qr = tcb.write_resp.clone();
+
+        match tcp.sock_to_sender.get(&socket) {
+            Some(qs) => {
+                qs.push(Message::UserCall {
+                    call: UserCallKind::Send { buffer: message.to_vec() },
+                });
+            }
+            None => return Err("ENOTSOCK: No TCB associated with this connection!".to_owned()),
         }
-        None => Err("ENOTSOCK: No TCB associated with this connection!".to_owned()),
+    }
+
+    debug!("write thread for socket {} going to block", socket);
+    // blocks
+    if write_qr.pop().is_ok() {
+        Ok(message.len())
+    } else {
+        // should never happen
+        Err("write failed".to_owned())
     }
 }
 
@@ -777,33 +797,26 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                 error!("foreign socket unspecified (called SEND on Listen state)");
                             }
                             SynSent | SynRcvd => {
-                                debug!("snd_nxt {:?}", tcb.snd_nxt);
-                                if tcb.snd_buffer.remaining_write() > buffer.len() {
-                                    tcb.snd_buffer.copy_from_slice(&buffer);
-                                } else {
-                                    error!("insufficient resources, buf remaining {:?}",
-                                           tcb.snd_buffer.remaining_write());
+                                info!("Not in Estab yet, requeueing buffer");
+                                if let Some(ref qs) = tcb.qr {
+                                    qs.push(Message::UserCall {
+                                        call: UserCallKind::Send { buffer: buffer },
+                                    });
                                 }
                             }
                             Estab | CloseWait => {
-                                // fill the send buffer as above
-                                if tcb.snd_wnd >
-                                   ((tcb.snd_nxt - tcb.iss + buffer.len() as u32) as u16) {
-
-                                    if tcb.snd_buffer.remaining_write() > buffer.len() {
-                                        tcb.snd_buffer.copy_from_slice(&buffer);
-                                    } else {
-                                        error!("insufficient resources");
-                                    }
-                                    if tcb.snd_buffer.remaining_write() > buffer.len() {
-                                        debug!("snd_buffer {:?}", tcb.snd_buffer);
-                                        tcb.snd_buffer.copy_from_slice(&buffer);
-                                        debug!("snd_buffer {:?}", tcb.snd_buffer);
-                                    } else {
-                                        error!("insufficient resources");
-                                    }
+                                if buffer.len() < tcb.snd_buffer.remaining_write() {
+                                    tcb.snd_buffer.copy_from_slice(&buffer);
+                                    tcb.write_resp.push(Ok(()));
 
                                     // send the segment
+                                    let num_bytes = if (tcb.snd_wnd as usize) <
+                                                       tcb.snd_buffer.remaining() {
+                                        tcb.snd_wnd as usize
+                                    } else {
+                                        tcb.snd_buffer.remaining()
+                                    };
+
                                     t_params = TcpParams {
                                         src_port: tcb.local_port,
                                         dst_port: tcb.remote_port,
@@ -813,11 +826,15 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                         window: tcb.rcv_wnd,
                                     };
                                     pkt_buf =
-                                        vec![0u8; TcpPacket::minimum_packet_size() + buffer.len()];
+                                        vec![0u8; TcpPacket::minimum_packet_size() + num_bytes];
+                                    debug!("snd_buf.pos: {:?}", tcb.snd_buffer.position());
+                                    tcb.snd_buffer
+                                        .copy_to_slice(&mut pkt_buf[TcpPacket::minimum_packet_size()..]);
+                                    debug!("snd_buf.pos (new): {:?}", tcb.snd_buffer.position());
                                     build_tcp_header(t_params,
                                                      tcb.local_ip,
                                                      tcb.remote_ip,
-                                                     Some(&buffer),
+                                                     None,
                                                      &mut pkt_buf);
                                     {
                                         let segment = MutableTcpPacket::new(&mut pkt_buf).unwrap();
@@ -832,12 +849,16 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                     };
 
                                     // TODO confirm if this needs to be done here
-                                    tcb.snd_nxt += buffer.len() as u32;
-                                    tcb.snd_wnd -= buffer.len() as u16;
+                                    tcb.snd_nxt += num_bytes as u32;
 
                                     should_send_packet = true;
                                 } else {
-                                    error!("insufficient resources");
+                                    error!("SEND: insufficent resources, requeuing");
+                                    if let Some(ref qs) = tcb.qr {
+                                        qs.push(Message::UserCall {
+                                            call: UserCallKind::Send { buffer: buffer },
+                                        });
+                                    }
                                 }
                             }
                             _ => {
@@ -1098,7 +1119,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                             if tcb.snd_una > tcb.iss {
                                 tcb.state = Estab;
                                 println!("v_connect() returned 0");
-                                tcb.connect_res.push(Ok(()));
+                                tcb.connect_resp.push(Ok(()));
 
                                 t_params = TcpParams {
                                     src_port: tcb.local_port,
@@ -1194,7 +1215,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                             if tcb.snd_una <= pkt_ack && pkt_ack <= tcb.snd_nxt {
                                                 tcb.state = Estab;
                                                 println!("v_connect() returned 0");
-                                                tcb.connect_res.push(Ok(()));
+                                                tcb.connect_resp.push(Ok(()));
                                             }
                                         }
                                         Estab | FinWait1 | FinWait2 | CloseWait | Closing => {
