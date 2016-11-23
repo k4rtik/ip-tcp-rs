@@ -20,6 +20,7 @@ use rip::{self, RipCtx};
 
 const TCP_PROT: u8 = 6;
 const TCP_MAX_WINDOW_SZ: usize = 65535;
+const RTO: u64 = 100; //ms
 
 #[derive(Default)]
 pub struct TCP {
@@ -976,17 +977,13 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                 let tcb = &mut (*tcb_ref.write().unwrap());
                 match to {
                     Retransmission { seq_num } => {
-                        let mut remove = false;
-                        // TODO check if need to iterate through the whole retransmit_q
                         if let Some(pkt) = tcb.retransmit_q.get(&seq_num) {
                             let segment = TcpPacket::new(&pkt.pkt_buf).unwrap();
                             if segment.get_sequence() == seq_num {
-                                if tcb.snd_una > seq_num {
-                                    remove = true;
-                                } else if let Some(ref qs) = tcb.qr {
+                                if let Some(ref qs) = tcb.qr {
                                     let qs = qs.clone();
                                     thread::spawn(move || {
-                                        let rto = Duration::from_millis(1);
+                                        let rto = Duration::from_millis(RTO);
                                         thread::sleep(rto);
                                         qs.push(Message::Timeout {
                                             to: TimeoutKind::Retransmission { seq_num: seq_num },
@@ -1000,9 +997,6 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                 }
                             }
                         };
-                        if remove {
-                            tcb.retransmit_q.remove(&seq_num);
-                        }
                     }
                     TimeWaitTO => {
                         tcb.state = Status::Closed;
@@ -1168,7 +1162,20 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                 build_tcp_header(t_params, lip, dip, None, &mut pkt_buf);
                                 should_send_packet = true;
                             } else if seg_len == 0 && pkt_seq_num == tcb.rcv_nxt {
-                                info!("received packet is probably an ACK");
+                                if tcb.snd_una < pkt_ack && pkt_ack <= tcb.snd_nxt &&
+                                   pkt_flags & TcpFlags::ACK == TcpFlags::ACK {
+                                    tcb.snd_una = pkt_ack;
+
+                                    // Remove acknowledged segments from retransmit_q
+                                    let ack_seq_nums: Vec<_> =
+                                        tcb.retransmit_q.keys().cloned().collect();
+                                    for seq_num in ack_seq_nums {
+                                        if seq_num > tcb.snd_una {
+                                            break;
+                                        }
+                                        tcb.retransmit_q.remove(&seq_num);
+                                    }
+                                }
                             } else {
                                 warn!("Dropping packet, looks invalid, sending ACK...");
                                 t_params = TcpParams {
@@ -1185,7 +1192,20 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                             // tcb.rcv_wnd > 0
                         } else if seg_len == 0 && tcb.rcv_nxt <= pkt_seq_num &&
                                   pkt_seq_num < tcb.rcv_nxt + tcb.rcv_wnd as u32 {
-                            info!("received packet is probably an ACK");
+                            if tcb.snd_una < pkt_ack && pkt_ack <= tcb.snd_nxt &&
+                               pkt_flags & TcpFlags::ACK == TcpFlags::ACK {
+                                tcb.snd_una = pkt_ack;
+
+                                // Remove acknowledged segments from retransmit_q
+                                let ack_seq_nums: Vec<_> =
+                                    tcb.retransmit_q.keys().cloned().collect();
+                                for seq_num in ack_seq_nums {
+                                    if seq_num > tcb.snd_una {
+                                        break;
+                                    }
+                                    tcb.retransmit_q.remove(&seq_num);
+                                }
+                            }
                         } else if seg_len > 0 &&
                                   (tcb.rcv_nxt <= pkt_seq_num &&
                                    pkt_seq_num < tcb.rcv_nxt + tcb.rcv_wnd as u32 ||
@@ -1221,8 +1241,16 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                         Estab | FinWait1 | FinWait2 | CloseWait | Closing => {
                                             if tcb.snd_una < pkt_ack && pkt_ack <= tcb.snd_nxt {
                                                 tcb.snd_una = pkt_ack;
-                                                // TODO discard old segments from retransmit_q
-                                                // and inform user of success of v_write()
+
+                                                // Remove acknowledged segments from retransmit_q
+                                                let ack_seq_nums: Vec<_> =
+                                                    tcb.retransmit_q.keys().cloned().collect();
+                                                for seq_num in ack_seq_nums {
+                                                    if seq_num > tcb.snd_una {
+                                                        break;
+                                                    }
+                                                    tcb.retransmit_q.remove(&seq_num);
+                                                }
 
                                                 // update send window
                                                 if tcb.snd_wl1 < pkt_ack ||
@@ -1374,7 +1402,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                 if let Some(ref qs) = tcb.qr {
                     let qs = qs.clone();
                     thread::spawn(move || {
-                        let rto = Duration::from_millis(1);
+                        let rto = Duration::from_millis(RTO);
                         thread::sleep(rto);
                         qs.push(Message::Timeout {
                             to: TimeoutKind::Retransmission { seq_num: seq_num },
