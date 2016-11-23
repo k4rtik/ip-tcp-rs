@@ -1,5 +1,4 @@
-use std::collections::vec_deque::VecDeque;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, BTreeMap};
 use std::net::Ipv4Addr;
 use std::str;
 use std::sync::{Arc, RwLock};
@@ -98,7 +97,7 @@ struct TCB {
 
     snd_buffer: RingBuf, // user's send buffer
     rcv_buffer: RingBuf, // user's receive buffer
-    retransmit_q: VecDeque<SegmentIpParams>,
+    retransmit_q: BTreeMap<u32, SegmentIpParams>,
 
     // Send Sequence Variables
     snd_una: u32, // send unacknowledged
@@ -135,7 +134,7 @@ impl TCB {
 
             snd_buffer: RingBuf::with_capacity(TCP_MAX_WINDOW_SZ + 1),
             rcv_buffer: RingBuf::with_capacity(TCP_MAX_WINDOW_SZ + 1),
-            retransmit_q: VecDeque::new(),
+            retransmit_q: BTreeMap::new(),
 
             snd_una: 0,
             snd_nxt: 0,
@@ -782,11 +781,10 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                             SynSent | SynRcvd => {
                                 debug!("snd_nxt {:?}", tcb.snd_nxt);
                                 if tcb.snd_buffer.remaining_write() > buffer.len() {
-                                    debug!("snd_buffer {:?}", tcb.snd_buffer);
                                     tcb.snd_buffer.copy_from_slice(&buffer);
-                                    debug!("snd_buffer {:?}", tcb.snd_buffer);
                                 } else {
-                                    error!("insufficient resources");
+                                    error!("insufficient resources, buf remaining {:?}",
+                                           tcb.snd_buffer.remaining_write());
                                 }
                             }
                             Estab | CloseWait => {
@@ -795,9 +793,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                 //   ((tcb.snd_nxt - tcb.iss + buffer.len() as u32) as u16) {
 
                                     if tcb.snd_buffer.remaining_write() > buffer.len() {
-                                        debug!("snd_buffer {:?}", tcb.snd_buffer);
                                         tcb.snd_buffer.copy_from_slice(&buffer);
-                                        debug!("snd_buffer {:?}", tcb.snd_buffer);
                                     } else {
                                         error!("insufficient resources");
                                     }
@@ -954,13 +950,13 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                 let tcb = &mut (*tcb_ref.write().unwrap());
                 match to {
                     Retransmission { seq_num } => {
-                        let mut pop = false;
+                        let mut remove = false;
                         // TODO check if need to iterate through the whole retransmit_q
-                        if let Some(pkt) = tcb.retransmit_q.front() {
+                        if let Some(pkt) = tcb.retransmit_q.get(&seq_num) {
                             let segment = TcpPacket::new(&pkt.pkt_buf).unwrap();
                             if segment.get_sequence() == seq_num {
                                 if tcb.snd_una > seq_num {
-                                    pop = true;
+                                    remove = true;
                                 } else if let Some(ref qs) = tcb.qr {
                                     let qs = qs.clone();
                                     thread::spawn(move || {
@@ -978,8 +974,8 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                 }
                             }
                         };
-                        if pop {
-                            tcb.retransmit_q.pop_front();
+                        if remove {
+                            tcb.retransmit_q.remove(&seq_num);
                         }
                     }
                     TimeWaitTO => {
@@ -1344,10 +1340,11 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
             if ip_params.len > TcpPacket::minimum_packet_size() {
                 // segment containing data
                 let tcb = &mut (*tcb_ref.write().unwrap());
-                tcb.retransmit_q.push_back(SegmentIpParams {
-                    pkt_buf: pkt_buf,
-                    params: ip_params,
-                });
+                tcb.retransmit_q.insert(seq_num,
+                                        SegmentIpParams {
+                                            pkt_buf: pkt_buf,
+                                            params: ip_params,
+                                        });
                 if let Some(ref qs) = tcb.qr {
                     let qs = qs.clone();
                     thread::spawn(move || {
