@@ -1,4 +1,4 @@
-NET_PATH = ../../nets/ABC.net
+NET_PATH = ../../nets/AB.net
 
 all:
 	cp ../../../target/debug/node .
