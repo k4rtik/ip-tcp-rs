@@ -502,10 +502,6 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
 
 // TODO consider moving inside one of impl TCP or TCB
 pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) -> Result<Vec<u8>, String> {
-    // TODO for Sumukha
-    // if (*tcp_ctx.read().unwrap()).unreadable_socks.contains(&socket) {
-    //    return Err(format!("error: socket {:?} is not readable anymore", socket));
-
     let tcp = &mut *tcp_ctx.write().unwrap();
     if tcp.invalidated_socks.contains(&socket) {
         return Err(format!("error: socket {:?} is invalidated", socket));
@@ -513,6 +509,7 @@ pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) -> Result<
     if tcp.unreadable_socks.contains(&socket) {
         return Err(format!("error: socket {:?} is not readable anymore", socket));
     }
+
     match tcp.tc_blocks.get(&socket) {
         Some(tcb) => {
             let tcb = &mut (*tcb.write().unwrap());
