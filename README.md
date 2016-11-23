@@ -1,26 +1,36 @@
 # CS168 IP/TCP Projects
 
 ## Design
-### Link Layer Abstraction
+### TCP
+- We use a channel based architecture to implement TCP state machine.
+- One thread per TCB, runs its state machine.
+- Separate threads are spawned for each timeout event.
+
+
+### Status
+- Connection teardown is not fully implemented.
+- Retransmission works but doesn't stop.
+- File transfer is currently limited to files under 64KiB
+- RTO of 1ms is used for the time being.
+
+
+### IP
+#### Link Layer Abstraction
 Link layer consists of a central data structure `DataLink` storing the local UDP socket and a list of local interfaces. Primary interface into this layer is `send_packet()` which is only used by the IP layer. There is a separate thread maintained to receive datagrams from the network and pass them onto the IP layer using a channel.
 
-### RIP Thread Model
+#### RIP Thread Model
 We maintain a RIP thread to both send periodic (5s) updates including the routing table to a node's local network. This thread also expires route entries if they have not been refreshed in 12s.
 
-### Processing IP Packets
+#### Processing IP Packets
 
-#### Sending a packet
+##### Sending a packet
 We have implemented a `send` interface conforming to that described in RFC 791 pg. 32. If the packet comes from RIP, we deliver it to the specified local interface using the link layer's `get_interface_by_dst()`. Else, RIP is consulted to find the next hop to deliver the packet to.
 
-#### Receiving a packet
+##### Receiving a packet
 This is done on a dedicated thread which calls `handle_packet` for each packet received.
 1. Validate checksum
 1. If `dst` is local, pass it to higher layers (RIP here, or print it)
 1. If not local, we forward it after decrementing TTL and reseting checksum.
-
-## Known Bugs
-- We observe with the ABC network that, if our implementation acts as node B, and the reference implementation acts as nodes A and C, we recieve some infinite routes from one of the reference nodes. This results in inconsistency in routing at times.
-- Expiry timeout is not tested.
 
 ## Reference
 ### TCP
