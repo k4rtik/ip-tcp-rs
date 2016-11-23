@@ -890,13 +890,16 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                             }
                             Listen => {
                                 // TODO only for  outstanding receives
-                                error!("closing");
+                                // error!("closing");
                                 tcb.state = Closed;
+                                (*tcp_ctx.write().unwrap())
+                                    .bound_ports
+                                    .remove(&(tcb.local_ip, tcb.local_port));
                                 break; // delete TCB
                             }
                             SynSent => {
                                 // TODO only for any queued sends and receives
-                                error!("closing");
+                                // error!("closing");
                                 tcb.state = Closed;
                                 break; // delete TCB
                             }
