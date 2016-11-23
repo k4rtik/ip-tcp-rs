@@ -5,6 +5,8 @@ use std::net::Ipv4Addr;
 use std::thread;
 use std::str;
 
+use bytes::{Buf, BufMut};
+use bytes_more::RingBuf;
 use crossbeam::sync::MsQueue;
 use pnet_macros_support::types::*;
 use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpPacket, TcpFlags};
@@ -93,9 +95,8 @@ struct TCB {
     remote_port: u16,
     state: Status,
 
-    snd_buffer: Vec<u8>, // user's send buffer
-    buf_write_next: u32,
-    rcv_buffer: Vec<u8>, // user's receive buffer
+    snd_buffer: RingBuf, // user's send buffer
+    rcv_buffer: RingBuf, // user's receive buffer
     cur_segment: Option<TcpPacket<'static>>, // current segment
     retransmit_q: VecDeque<TcpPacket<'static>>, // retransmit queue, TODO ipParams needed?
 
@@ -111,7 +112,6 @@ struct TCB {
     rcv_nxt: u32, // receive next
     rcv_wnd: u16, // receive window (size)
     irs: u32, // initial receive sequence number
-    read_nxt: u32,
 
     // recv end of channel
     qr: Option<Arc<MsQueue<Message>>>,
@@ -133,9 +133,8 @@ impl TCB {
             remote_port: 0,
             state: Status::Closed,
 
-            snd_buffer: vec![0; TCP_MAX_WINDOW_SZ],
-            buf_write_next: 0,
-            rcv_buffer: vec![0; TCP_MAX_WINDOW_SZ],
+            snd_buffer: RingBuf::with_capacity(TCP_MAX_WINDOW_SZ + 1),
+            rcv_buffer: RingBuf::with_capacity(TCP_MAX_WINDOW_SZ + 1),
             cur_segment: None,
             retransmit_q: VecDeque::new(),
 
@@ -149,7 +148,6 @@ impl TCB {
             rcv_nxt: 0,
             rcv_wnd: TCP_MAX_WINDOW_SZ as u16,
             irs: rand::random::<u16>() as u32,
-            read_nxt: 0,
 
             qr: qr,
 
@@ -513,27 +511,26 @@ pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) -> Result<
     match tcp.tc_blocks.get(&socket) {
         Some(tcb) => {
             let tcb = &mut (*tcb.write().unwrap());
-            if (tcb.read_nxt + tcb.irs + size as u32) < tcb.rcv_nxt {
-                let i = tcb.read_nxt as usize;
-                debug!("payload: {}",
-                       String::from_utf8_lossy(&tcb.rcv_buffer[i..i + size]));
-                tcb.read_nxt += size as u32;
+            if (tcb.rcv_buffer.position() as u32 + tcb.irs + size as u32) < tcb.rcv_nxt {
                 tcb.rcv_wnd += size as u16;
                 debug!("rcv_wnd = {:?}", tcb.rcv_wnd);
-                Ok(tcb.rcv_buffer[i..i + size].to_vec())
+                let mut dst = vec![0; size];
+                tcb.rcv_buffer.copy_to_slice(&mut dst);
+                Ok(dst)
             } else {
-                let i = tcb.read_nxt as usize;
-                let sz: usize = (tcb.rcv_nxt - (tcb.read_nxt + tcb.irs) - 1) as usize;
+                // insufficient data
+                let sz: usize = (tcb.rcv_nxt - (tcb.rcv_buffer.position() as u32 + tcb.irs) -
+                                 1) as usize;
                 if sz > 0 {
-                    debug!("i: {} i+sz: {}", i, i + sz);
-                    trace!("{:?}", &tcb.rcv_buffer[0..20]);
-                    debug!("payload: {}",
-                           String::from_utf8_lossy(&tcb.rcv_buffer[i..i + sz]));
-                    tcb.read_nxt += sz as u32;
                     tcb.rcv_wnd += sz as u16;
                     debug!("rcv_wnd = {:?}", tcb.rcv_wnd);
+                    let mut dst = vec![0; sz];
+                    tcb.rcv_buffer.copy_to_slice(&mut dst);
+                    Ok(dst)
+                } else {
+                    // insufficient data
+                    Ok(vec![])
                 }
-                Ok(tcb.rcv_buffer[i..i + sz].to_vec())
             }
         }
         None => Err("No matching TCB found!".to_owned()),
@@ -783,44 +780,26 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                             }
                             SynSent | SynRcvd => {
                                 debug!("snd_nxt {:?}", tcb.snd_nxt);
-                                let idx = tcb.buf_write_next as usize;
-                                // TODO consider rolling back the buffer
-                                if tcb.snd_buffer.len() - idx > buffer.len() {
-                                    debug!("snd_buffer {:?}", &tcb.snd_buffer[..100]);
-                                    for (i, byte) in buffer.iter().enumerate() {
-                                        tcb.snd_buffer[idx + i] = *byte;
-                                    }
-                                    debug!("snd_buffer {:?}", &tcb.snd_buffer[..100]);
-                                    tcb.buf_write_next += buffer.len() as u32;
+                                if tcb.snd_buffer.remaining_write() > buffer.len() {
+                                    debug!("snd_buffer {:?}", tcb.snd_buffer);
+                                    tcb.snd_buffer.copy_from_slice(&buffer);
+                                    debug!("snd_buffer {:?}", tcb.snd_buffer);
                                 } else {
                                     error!("insufficient resources");
                                 }
                             }
                             Estab | CloseWait => {
                                 // fill the send buffer as above
-                                // debug!("snd_nxt {:?}", tcb.snd_nxt);
-                                // let idx = tcb.buf_write_next as usize;
-                                // / TODO consider rolling back the buffer
-                                // if tcb.snd_buffer.len() - idx > buffer.len() {
-                                //    debug!("snd_buffer {:?}", &tcb.snd_buffer[..100]);
-                                //    for (i, byte) in buffer.iter().enumerate() {
-                                //        tcb.snd_buffer[idx + i] = buffer[i];
-                                //    }
-                                //    debug!("snd_buffer {:?}", &tcb.snd_buffer[..100]);
-                                //    tcb.buf_write_next += buffer.len() as u32;
-                                // } else {
-                                //    error!("insufficient resources");
-                                // }
-
                                 if tcb.snd_wnd >
                                    ((tcb.snd_nxt - tcb.iss + buffer.len() as u32) as u16) {
-                                    let idx = tcb.buf_write_next as usize;
-                                    debug!("snd_buffer {:?}", &tcb.snd_buffer[..100]);
-                                    for (i, byte) in buffer.iter().enumerate() {
-                                        tcb.snd_buffer[idx + i] = *byte;
+
+                                    if tcb.snd_buffer.remaining_write() > buffer.len() {
+                                        debug!("snd_buffer {:?}", tcb.snd_buffer);
+                                        tcb.snd_buffer.copy_from_slice(&buffer);
+                                        debug!("snd_buffer {:?}", tcb.snd_buffer);
+                                    } else {
+                                        error!("insufficient resources");
                                     }
-                                    debug!("snd_buffer {:?}", &tcb.snd_buffer[..100]);
-                                    tcb.buf_write_next += buffer.len() as u32;
 
                                     // send the segment
                                     t_params = TcpParams {
@@ -1243,21 +1222,10 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                                         debug!("Appending to socket: {:?}, {:?}",
                                                                tcb.remote_ip,
                                                                tcb.remote_port);
-                                                        let mut j = 0;
-                                                        let start = tcb.rcv_nxt - tcb.irs - 1;
-                                                        trace!("rcv_nxt {:?} pkt_len: {:?}",
-                                                               start,
-                                                               seg_len);
-                                                        for i in start..start + seg_len {
-                                                            if j == seg_len {
-                                                                break;
-                                                            }
-                                                            tcb.rcv_buffer[i as usize] =
-                                                                pkt.payload()[j as usize];
-                                                            j += 1;
-                                                        }
-                                                        trace!("rcv_buff: {:?}",
-                                                               &tcb.rcv_buffer[0..20]);
+
+                                                        tcb.rcv_buffer.copy_from_slice(&pkt.payload()[..seg_len as usize]);
+
+                                                        trace!("rcv_buff: {:?}", tcb.rcv_buffer);
                                                         tcb.rcv_wnd -= seg_len as u16;
                                                         debug!("rcv_wnd = {:?}", tcb.rcv_wnd);
                                                         tcb.rcv_nxt = pkt_seq_num + seg_len;

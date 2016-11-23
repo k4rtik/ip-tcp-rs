@@ -205,19 +205,14 @@ pub fn send_file_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
 pub fn recv_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: bool) {
     info!("Receiving...");
     info!("Size req: {:?}", size);
-    let mut bytes = 0;
     let mut data_recv = Vec::new();
     if block {
         loop {
-            match tcp::v_read(tcp_ctx, socket, size - bytes) {
+            match tcp::v_read(tcp_ctx, socket, size - data_recv.len()) {
                 Ok(mut data) => {
                     data_recv.append(&mut data);
-                    // debug!("bytes written: {:?}", bytes);
-                    if data_recv.len() > bytes {
-                        bytes += data_recv.len();
-                    }
-                    if bytes >= size {
-                        debug!("bytes written: {:?}", bytes);
+                    if data_recv.len() >= size {
+                        debug!("bytes written: {:?}", data_recv.len());
                         break;
                     }
                 } 
@@ -228,13 +223,12 @@ pub fn recv_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: b
         match tcp::v_read(tcp_ctx, socket, size) {
             Ok(mut data) => {
                 data_recv.append(&mut data);
-                bytes = data_recv.len();
             }
             Err(e) => println!("{:?}", e),
         }
     }
     debug!("Data recvd: {:?}", String::from_utf8_lossy(&data_recv));
-    debug!("bytes written: {:?}", bytes);
+    debug!("bytes written: {:?}", data_recv.len());
 }
 
 fn shutdown_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, mode: String) {
