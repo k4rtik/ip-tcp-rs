@@ -25,6 +25,7 @@ use std::io::{BufReader, BufRead};
 use std::net::Ipv4Addr;
 use std::sync::{Arc, RwLock};
 use std::thread;
+use std::io::Read;
 
 use datalink::{DataLink, Interface, SocketAddrInterface, RouteInfo};
 use rip::{RipCtx, Route};
@@ -188,11 +189,22 @@ pub fn send_file_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
                 Ok(_) => {
                     info!("v_connect() put new TCB in SynSent state");
                     let mut f = BufReader::new(File::open(fl).unwrap());
-                    let mut buf = String::new();
-                    f.read_line(&mut buf).expect("Parse error");
-                    debug!("buf: {:?}", buf);
-                    let bytes = tcp::v_write(tcp_ctx, sock, buf.as_bytes());
-                    debug!("bytes written: {:?}", bytes);
+                    let mut buf = vec![0; 1024];
+                    let mut bytes = 0;
+                    loop {
+                        match f.read(&mut buf) {
+                            Ok(bytes_read) => {
+                                if bytes_read == 0 {
+                                    break;
+                                }
+                                trace!("buf: {:?}", buf);
+                                let bytes = tcp::v_write(tcp_ctx, sock, &buf[..bytes_read]);
+                                trace!("bytes written: {:?}", bytes);
+                            }
+                            Err(_) => break,
+                        }
+                    }
+		    tcp::v_close(tcp_ctx, sock);
                 }
                 Err(e) => error!("v_connect() failed: {}", e),
             }

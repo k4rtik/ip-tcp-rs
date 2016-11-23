@@ -544,7 +544,7 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, message: &[u8]) -> Res
         return Err(format!("error: socket {:?} is invalidated", socket));
     }
 
-    debug!("Message: {:?}", message);
+    trace!("Message: {:?}", message);
 
     match (*tcp_ctx.read().unwrap()).sock_to_sender.get(&socket) {
         Some(qs) => {
@@ -556,10 +556,10 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, message: &[u8]) -> Res
 }
 
 pub fn v_shutdown(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, mode: usize) -> Result<(), String> {
-    if (*tcp_ctx.read().unwrap()).invalidated_socks.contains(&socket) {
-        return Err(format!("error: socket {:?} is invalidated", socket));
-    }
-
+    // if (*tcp_ctx.read().unwrap()).invalidated_socks.contains(&socket) {
+    // return Err(format!("error: socket {:?} is invalidated", socket));
+    // }
+    //
     let tcp = &mut *tcp_ctx.write().unwrap();
     if tcp.tc_blocks.get(&socket).is_none() {
         Err(format!("No TCB exists for given socket: {:?}", socket))
@@ -791,8 +791,8 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                             }
                             Estab | CloseWait => {
                                 // fill the send buffer as above
-                                if tcb.snd_wnd >
-                                   ((tcb.snd_nxt - tcb.iss + buffer.len() as u32) as u16) {
+                                //if tcb.snd_wnd >
+                                //   ((tcb.snd_nxt - tcb.iss + buffer.len() as u32) as u16) {
 
                                     if tcb.snd_buffer.remaining_write() > buffer.len() {
                                         debug!("snd_buffer {:?}", tcb.snd_buffer);
@@ -835,9 +835,9 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                     tcb.snd_wnd -= buffer.len() as u16;
 
                                     should_send_packet = true;
-                                } else {
-                                    error!("insufficient resources");
-                                }
+                                //} else {
+                                //    error!("insufficient resources");
+                               // }
                             }
                             _ => {
                                 error!("connection closing");
