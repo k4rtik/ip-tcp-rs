@@ -56,7 +56,7 @@ pub enum Message {
 pub enum UserCallKind {
     Open { dst_addr: Ipv4Addr, port: u16 },
     Send { buffer: Vec<u8> },
-    Receive,
+    Receive { num_bytes: usize },
     Close,
 }
 
@@ -98,6 +98,7 @@ struct TCB {
 
     snd_buffer: RingBuf, // user's send buffer
     rcv_buffer: RingBuf, // user's receive buffer
+    seg_q: BTreeMap<u32, Vec<u8>>,
     // TODO consider storing only index into snd_buffer instead of complete segment
     retransmit_q: BTreeMap<u32, SegmentIpParams>,
 
@@ -124,6 +125,7 @@ struct TCB {
     // response channels
     connect_resp: Arc<MsQueue<Result<(), String>>>,
     write_resp: Arc<MsQueue<Result<(), String>>>,
+    read_resp: Arc<MsQueue<Option<()>>>,
 }
 
 impl TCB {
@@ -137,6 +139,7 @@ impl TCB {
 
             snd_buffer: RingBuf::with_capacity(TCP_MAX_WINDOW_SZ + 1),
             rcv_buffer: RingBuf::with_capacity(TCP_MAX_WINDOW_SZ + 1),
+            seg_q: BTreeMap::new(),
             retransmit_q: BTreeMap::new(),
 
             snd_una: 0,
@@ -157,6 +160,7 @@ impl TCB {
 
             connect_resp: Arc::new(MsQueue::new()),
             write_resp: Arc::new(MsQueue::new()),
+            read_resp: Arc::new(MsQueue::new()),
         }
     }
 }
@@ -503,38 +507,40 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
 
 // TODO consider moving inside one of impl TCP or TCB
 pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) -> Result<Vec<u8>, String> {
-    let tcp = &mut *tcp_ctx.write().unwrap();
-    if tcp.invalidated_socks.contains(&socket) {
+    if (*tcp_ctx.read().unwrap()).invalidated_socks.contains(&socket) {
         return Err(format!("error: socket {:?} is invalidated", socket));
     }
-    if tcp.unreadable_socks.contains(&socket) {
+    if (*tcp_ctx.read().unwrap()).unreadable_socks.contains(&socket) {
         return Err(format!("error: socket {:?} is not readable anymore", socket));
     }
 
-    match tcp.tc_blocks.get(&socket) {
-        Some(tcb) => {
-            let tcb = &mut (*tcb.write().unwrap());
-            if tcb.state == Status::Closed {
-                return Err("Connection Closed!".to_owned());
+    let read_qr: Arc<MsQueue<Option<()>>>;
+    {
+        let tcp = &(*tcp_ctx.read().unwrap());
+        let tcb = tcp.tc_blocks[&socket].clone();
+        let tcb = &(*tcb.read().unwrap());
+        read_qr = tcb.read_resp.clone();
+
+        match tcp.sock_to_sender.get(&socket) {
+            Some(qs) => {
+                qs.push(Message::UserCall { call: UserCallKind::Receive { num_bytes: size } });
             }
-            let mut sz: usize = 0;
-            if (tcb.rcv_buffer.position() as u32 + tcb.irs + size as u32) < tcb.rcv_nxt {
-                sz = size;
-            } else {
-                // insufficient data
-                sz = (tcb.rcv_nxt - (tcb.rcv_buffer.position() as u32 + tcb.irs) - 1) as usize;
-            }
-            // debug!("sz: {:?}", sz);
-            tcb.rcv_wnd += sz as u16;
-            // debug!("rcv_wnd = {:?}", tcb.rcv_wnd);
-            let mut dst = vec![0; sz];
-            if sz > 0 {
-                tcb.rcv_buffer.copy_to_slice(&mut dst);
-                return Ok(dst);
-            }
-            Ok(vec![])
+            None => return Err("ENOTSOCK: No TCB associated with this connection!".to_owned()),
         }
-        None => Err("No matching TCB found!".to_owned()),
+    }
+
+    trace!("v_read() for socket {} going to block", socket);
+    // blocks
+    if read_qr.pop().is_some() {
+        let mut ret = vec![0u8; size];
+        let tcp = &(*tcp_ctx.read().unwrap());
+        let tcb = tcp.tc_blocks[&socket].clone();
+        let tcb = &mut (*tcb.write().unwrap());
+        tcb.rcv_buffer.copy_to_slice(&mut ret);
+        Ok(ret)
+    } else {
+        // EOF
+        Ok(vec![])
     }
 }
 
@@ -563,7 +569,7 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, message: &[u8]) -> Res
         }
     }
 
-    trace!("write thread for socket {} going to block", socket);
+    trace!("v_write for socket {} going to block", socket);
     // blocks
     if write_qr.pop().is_ok() {
         Ok(message.len())
@@ -868,15 +874,40 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                             }
                         }
                     }
-                    Receive => {
+                    Receive { num_bytes } => {
                         let tcb = &mut (*tcb_ref.write().unwrap());
                         #[allow(match_same_arms)]
                         match tcb.state {
                             Closed => {
                                 error!("connection does not exist");
                             }
-                            Listen | SynSent | SynRcvd => {}
-                            Estab | FinWait1 | FinWait2 => {}
+                            Listen | SynSent | SynRcvd => {
+                                info!("Not in Estab yet, requeueing request");
+                                if let Some(ref qs) = tcb.qr {
+                                    qs.push(Message::UserCall {
+                                        call: UserCallKind::Receive { num_bytes: num_bytes },
+                                    });
+                                }
+                            }
+                            Estab | FinWait1 | FinWait2 => {
+                                // Remove acknowledged segments from seg_q
+                                let seq_nums: Vec<_> = tcb.seg_q.keys().cloned().collect();
+                                for seq_num in seq_nums {
+                                    if seq_num > tcb.rcv_nxt {
+                                        break;
+                                    }
+                                    if let Some(seg) = tcb.seg_q.remove(&seq_num) {
+                                        tcb.rcv_buffer.copy_from_slice(&seg);
+                                    }
+                                }
+                                if tcb.rcv_buffer.remaining() >= num_bytes {
+                                    tcb.read_resp.push(Some(()));
+                                } else if let Some(ref qs) = tcb.qr {
+                                    qs.push(Message::UserCall {
+                                        call: UserCallKind::Receive { num_bytes: num_bytes },
+                                    });
+                                }
+                            }
                             CloseWait => {}
                             _ => {
                                 error!("connection closing");
