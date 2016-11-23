@@ -20,7 +20,7 @@ use rip::{self, RipCtx};
 
 const TCP_PROT: u8 = 6;
 const TCP_MAX_WINDOW_SZ: usize = 65535;
-const RTO: u64 = 100; //ms
+const RTO: u64 = 10000; //ms
 
 #[derive(Default)]
 pub struct TCP {
@@ -98,6 +98,7 @@ struct TCB {
 
     snd_buffer: RingBuf, // user's send buffer
     rcv_buffer: RingBuf, // user's receive buffer
+    // TODO consider storing only index into snd_buffer instead of complete segment
     retransmit_q: BTreeMap<u32, SegmentIpParams>,
 
     // Send Sequence Variables
@@ -368,7 +369,7 @@ pub fn v_accept(tcp_ctx: Arc<RwLock<TCP>>,
         }
     }
 
-    debug!("accept thread for socket {} going to block", socket);
+    trace!("accept thread for socket {} going to block", socket);
     // blocks
     let ntcb = ltcb_qr.pop();
 
@@ -495,7 +496,7 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
         }
     }
 
-    debug!("connect thread for socket {} going to block", socket);
+    trace!("connect thread for socket {} going to block", socket);
     // blocks
     conn_qr.pop()
 }
@@ -562,7 +563,7 @@ pub fn v_write(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, message: &[u8]) -> Res
         }
     }
 
-    debug!("write thread for socket {} going to block", socket);
+    trace!("write thread for socket {} going to block", socket);
     // blocks
     if write_qr.pop().is_ok() {
         Ok(message.len())
@@ -712,7 +713,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                     Open { dst_addr, port } => {
                         debug!("Open {:?} {:?}", dst_addr, port);
                         let tcb = &mut (*tcb_ref.write().unwrap());
-                        debug!("Took write lock on TCB");
+                        trace!("Took write lock on TCB");
                         match tcb.state {
                             Closed => {
                                 tcb.remote_ip = dst_addr;
@@ -828,10 +829,10 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                     };
                                     pkt_buf =
                                         vec![0u8; TcpPacket::minimum_packet_size() + num_bytes];
-                                    debug!("snd_buf.pos: {:?}", tcb.snd_buffer.position());
+                                    trace!("snd_buf.pos: {:?}", tcb.snd_buffer.position());
                                     tcb.snd_buffer
                                         .copy_to_slice(&mut pkt_buf[TcpPacket::minimum_packet_size()..]);
-                                    debug!("snd_buf.pos (new): {:?}", tcb.snd_buffer.position());
+                                    trace!("snd_buf.pos (new): {:?}", tcb.snd_buffer.position());
                                     build_tcp_header(t_params,
                                                      tcb.local_ip,
                                                      tcb.remote_ip,
@@ -1008,7 +1009,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                 let segment = pkt.pkt_buf;
                 let pkt_ip_params = pkt.params;
                 let pkt = TcpPacket::new(&segment).unwrap();
-                debug!("{:?}", pkt);
+                trace!("{:?}", pkt);
                 // TODO verify checksum
                 let pkt_seq_num = pkt.get_sequence();
                 let pkt_ack = pkt.get_acknowledgement();
@@ -1032,7 +1033,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                 let tcb = &mut (*tcb_ref.write().unwrap());
                 // regular socket
                 tcb.snd_wnd = pkt_window;
-                debug!("snd_wnd = {:?}", tcb.snd_wnd);
+                trace!("snd_wnd = {:?}", tcb.snd_wnd);
 
                 use self::Status::*;
                 match tcb.state {
@@ -1147,7 +1148,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                         // Otherwise, pg. 69 in RFC 793
                         // TODO discard old dups
                         let seg_len = pkt_size as u32 - 20;
-                        debug!("incoming segment length: {}", seg_len);
+                        trace!("incoming segment length: {}", seg_len);
                         if tcb.rcv_wnd == 0 {
                             if seg_len > 0 {
                                 warn!("Dropping pkt, cant accept with 0 window, sending ACK...");
@@ -1257,7 +1258,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                                    (tcb.snd_wl1 == pkt_ack &&
                                                     tcb.snd_wl2 <= pkt_ack) {
                                                     tcb.snd_wnd = pkt_window;
-                                                    debug!("snd_wnd = {:?}", tcb.snd_wnd);
+                                                    trace!("snd_wnd = {:?}", tcb.snd_wnd);
                                                     tcb.snd_wl1 = pkt_seq_num;
                                                     tcb.snd_wl2 = pkt_ack;
                                                 }
