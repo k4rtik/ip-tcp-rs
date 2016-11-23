@@ -245,8 +245,8 @@ pub fn recv_file_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
             Ok(socket) => {
                 loop {
                     match tcp::v_read(&tcp_ctx, socket, 1024) {
-                        Ok(mut data) => {
-                            buffer.write_all(&data);
+                        Ok(data) => {
+                            buffer.write_all(&data).unwrap();
                         }
                         Err(e) => {
                             if e == "Connection Closed!" {

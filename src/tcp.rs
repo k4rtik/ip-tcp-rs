@@ -1220,10 +1220,10 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                     tcb.state = Closed;
                                     {
                                         let tcp = &mut (*tcp_ctx.write().unwrap());
-                                        // TODO think about exiting the thread here
                                         // tcp.tc_blocks.remove(&sock_to_be_deleted).unwrap();
                                         // tcp.free_sockets.push(sock_to_be_deleted);
                                         tcp.bound_ports.remove(&(tcb.local_ip, tcb.local_port));
+                                        break;
                                     }
                                 }
 
