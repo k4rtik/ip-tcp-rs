@@ -938,7 +938,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                 error!("connection does not exist");
                             }
                             Listen => {
-                                // TODO only for  outstanding receives
+                                // TODO qs.push the following for outstanding receives
                                 // error!("closing");
                                 tcb.state = Closed;
                                 (*tcp_ctx.write().unwrap())
@@ -947,71 +947,117 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                 break; // delete TCB
                             }
                             SynSent => {
-                                // TODO only for any queued sends and receives
+                                tcb.write_resp.push(Err("closing".to_owned()));
+                                // TODO qs.push the following for outstanding receives
                                 // error!("closing");
                                 tcb.state = Closed;
                                 break; // delete TCB
                             }
                             SynRcvd => {
-                                // TODO take action based on if there are pending SENDs
+                                // TODO also check if there are pending SENDs
+                                if tcb.snd_buffer.remaining() == 0 {
+                                    t_params = TcpParams {
+                                        src_port: tcb.local_port,
+                                        dst_port: tcb.remote_port,
+                                        seq_num: tcb.snd_nxt,
+                                        ack_num: tcb.rcv_nxt,
+                                        flags: TcpFlags::FIN,
+                                        window: tcb.rcv_wnd,
+                                    };
+
+                                    build_tcp_header(t_params,
+                                                     tcb.local_ip,
+                                                     tcb.remote_ip,
+                                                     None,
+                                                     &mut pkt_buf);
+                                    ip_params = ip::IpParams {
+                                        src: tcb.local_ip,
+                                        dst: tcb.remote_ip,
+                                        ..ip_params
+                                    };
+
+                                    info!("switching to FinWait1 from Estab");
+                                    tcb.state = FinWait1;
+
+                                    should_send_packet = true;
+                                } else {
+                                    info!("Not in Estab yet, requeueing CLOSE");
+                                    if let Some(ref qs) = tcb.qr {
+                                        qs.push(Message::UserCall { call: UserCallKind::Close });
+                                    }
+                                }
                             }
                             Estab => {
-                                // TODO finish SENDs
-                                t_params = TcpParams {
-                                    src_port: tcb.local_port,
-                                    dst_port: tcb.remote_port,
-                                    seq_num: tcb.snd_nxt,
-                                    ack_num: tcb.rcv_nxt,
-                                    flags: TcpFlags::FIN,
-                                    window: tcb.rcv_wnd,
-                                };
 
-                                build_tcp_header(t_params,
-                                                 tcb.local_ip,
-                                                 tcb.remote_ip,
-                                                 None,
-                                                 &mut pkt_buf);
-                                ip_params = ip::IpParams {
-                                    src: tcb.local_ip,
-                                    dst: tcb.remote_ip,
-                                    ..ip_params
-                                };
+                                // TODO also check if there are pending SENDs
+                                if tcb.snd_buffer.remaining() != 0 {
+                                    info!("pending sends, requeueing CLOSE");
+                                    if let Some(ref qs) = tcb.qr {
+                                        qs.push(Message::UserCall { call: UserCallKind::Close });
+                                    }
+                                } else {
+                                    t_params = TcpParams {
+                                        src_port: tcb.local_port,
+                                        dst_port: tcb.remote_port,
+                                        seq_num: tcb.snd_nxt,
+                                        ack_num: tcb.rcv_nxt,
+                                        flags: TcpFlags::FIN,
+                                        window: tcb.rcv_wnd,
+                                    };
+
+                                    build_tcp_header(t_params,
+                                                     tcb.local_ip,
+                                                     tcb.remote_ip,
+                                                     None,
+                                                     &mut pkt_buf);
+                                    ip_params = ip::IpParams {
+                                        src: tcb.local_ip,
+                                        dst: tcb.remote_ip,
+                                        ..ip_params
+                                    };
+
+                                    should_send_packet = true;
+                                }
 
                                 info!("switching to FinWait1 from Estab");
                                 tcb.state = FinWait1;
-
-                                should_send_packet = true;
                             }
                             FinWait1 | FinWait2 => {
                                 error!("connection closing");
                             }
                             CloseWait => {
-                                // TODO finish SENDs
-                                t_params = TcpParams {
-                                    src_port: tcb.local_port,
-                                    dst_port: tcb.remote_port,
-                                    seq_num: tcb.snd_nxt,
-                                    ack_num: tcb.rcv_nxt,
-                                    flags: TcpFlags::FIN,
-                                    window: tcb.rcv_wnd,
-                                };
+                                // TODO also check if there are pending SENDs
+                                if tcb.snd_buffer.remaining() != 0 {
+                                    info!("pending sends, requeueing CLOSE");
+                                    if let Some(ref qs) = tcb.qr {
+                                        qs.push(Message::UserCall { call: UserCallKind::Close });
+                                    }
+                                } else {
+                                    t_params = TcpParams {
+                                        src_port: tcb.local_port,
+                                        dst_port: tcb.remote_port,
+                                        seq_num: tcb.snd_nxt,
+                                        ack_num: tcb.rcv_nxt,
+                                        flags: TcpFlags::FIN,
+                                        window: tcb.rcv_wnd,
+                                    };
 
-                                build_tcp_header(t_params,
-                                                 tcb.local_ip,
-                                                 tcb.remote_ip,
-                                                 None,
-                                                 &mut pkt_buf);
-                                ip_params = ip::IpParams {
-                                    src: tcb.local_ip,
-                                    dst: tcb.remote_ip,
-                                    ..ip_params
-                                };
+                                    build_tcp_header(t_params,
+                                                     tcb.local_ip,
+                                                     tcb.remote_ip,
+                                                     None,
+                                                     &mut pkt_buf);
+                                    ip_params = ip::IpParams {
+                                        src: tcb.local_ip,
+                                        dst: tcb.remote_ip,
+                                        ..ip_params
+                                    };
 
-                                info!("switching to Closing from CloseWait");
-                                tcb.state = Closing;
+                                    info!("switching to Closing from CloseWait");
+                                    tcb.state = Closing;
 
-                                should_send_packet = true;
-                                // send FIN
+                                    should_send_packet = true;
+                                }
                             }
                             _ => {
                                 error!("connection closing");
