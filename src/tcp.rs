@@ -824,7 +824,6 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                     }
                     Send { buffer } => {
                         let tcb = &mut (*tcb_ref.write().unwrap());
-                        #[allow(match_same_arms)]
                         match tcb.state {
                             Closed => {
                                 error!("connection does not exist");
@@ -926,6 +925,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                         break;
                                     }
                                     if let Some(seg) = tcb.seg_q.remove(&seq_num) {
+                                        // TODO check for overflow
                                         tcb.rcv_buffer.copy_from_slice(&seg);
                                     }
                                 }
@@ -945,6 +945,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                         break;
                                     }
                                     if let Some(seg) = tcb.seg_q.remove(&seq_num) {
+                                        // TODO check for overflow
                                         tcb.rcv_buffer.copy_from_slice(&seg);
                                     }
                                 }
@@ -1149,9 +1150,6 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                     dst: dip,
                     ..ip_params
                 };
-                // let mut mark_tcb_for_deletion = false;
-                // let mut sock_to_be_deleted = 0;
-
 
                 let tcb = &mut (*tcb_ref.write().unwrap());
                 // regular socket
@@ -1223,6 +1221,7 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                         if pkt_flags & TcpFlags::ACK == TcpFlags::ACK {
                             // Pg. 66 in RFC 793
                             if pkt_ack <= tcb.iss || pkt_ack > tcb.snd_nxt {
+                                // drop the segment
                             } else if tcb.snd_una <= pkt_ack && pkt_ack < tcb.snd_nxt {
                                 info!("acceptable ACK");
                             }
@@ -1233,7 +1232,16 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                             tcb.rcv_nxt = pkt_seq_num + 1;
                             tcb.irs = pkt_seq_num;
                             tcb.snd_una = pkt_ack;
-                            // TODO discard ack'ed segments from retransmit_q
+
+                            // Remove acknowledged segments from retransmit_q
+                            let ack_seq_nums: Vec<_> = tcb.retransmit_q.keys().cloned().collect();
+                            for seq_num in ack_seq_nums {
+                                if seq_num > tcb.snd_una {
+                                    break;
+                                }
+                                tcb.retransmit_q.remove(&seq_num);
+                            }
+
                             if tcb.snd_una > tcb.iss {
                                 tcb.state = Estab;
                                 println!("v_connect() returned 0");
@@ -1263,8 +1271,11 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                 };
                                 build_tcp_header(t_params, lip, dip, None, &mut pkt_buf);
                                 should_send_packet = true;
+
+                                // TODO queue for processing in Estab if there is payload
                             }
                         } else {
+                            // drop the segment
                         }
                     }
                     _ => {
@@ -1340,21 +1351,19 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                 if pkt_flags & TcpFlags::SYN == TcpFlags::SYN {
                                     // Pg. 71 in RFC 793
                                     warn!("received SYN in the window, discarding TCB");
-                                    println!("connection reset");
+                                    error!("connection reset");
                                     tcb.state = Closed;
                                     {
                                         let tcp = &mut (*tcp_ctx.write().unwrap());
-                                        // tcp.tc_blocks.remove(&sock_to_be_deleted).unwrap();
-                                        // tcp.free_sockets.push(sock_to_be_deleted);
                                         tcp.bound_ports.remove(&(tcb.local_ip, tcb.local_port));
-                                        break;
+                                        break; // delete TCB
                                     }
                                 }
 
                                 if pkt_flags & TcpFlags::ACK == TcpFlags::ACK {
                                     match tcb.state {
                                         SynRcvd => {
-                                            debug!("Handling SynRcvd");
+                                            trace!("Handling SynRcvd");
                                             // Pg. 72 in RFC 793
                                             if tcb.snd_una <= pkt_ack && pkt_ack <= tcb.snd_nxt {
                                                 tcb.state = Estab;
@@ -1406,36 +1415,35 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                                 should_send_packet = true;
                                             }
 
-                                            // TODO more specific processing, see pg. 73
+                                            // more specific processing, see pg. 73
                                             match tcb.state {
-                                                // FinWait1 => {}
-                                                // FinWait2 => {}
-                                                // CloseWait => {}
-                                                // Closing => {}
-                                                _ => {}
-                                            }
-
-                                            // TODO payload processing, see pg. 74
-                                            match tcb.state {
-                                                Estab | FinWait1 | FinWait2 => {
-                                                    // TODO put the received segment in the right
-                                                    // place in the buffer
-                                                    if tcb.rcv_nxt - tcb.irs + seg_len <=
-                                                       tcb.rcv_wnd as u32 {
-                                                        debug!("Appending to socket: {:?}, {:?}",
-                                                               tcb.remote_ip,
-                                                               tcb.remote_port);
-
-                                                        tcb.rcv_buffer
-                                                            .copy_from_slice(
-                                                                &pkt.payload()[..seg_len as usize]);
-
-                                                        trace!("rcv_buff: {:?}", tcb.rcv_buffer);
-                                                        tcb.rcv_wnd -= seg_len as u16;
-                                                        debug!("rcv_wnd = {:?}", tcb.rcv_wnd);
-                                                        tcb.rcv_nxt = pkt_seq_num + seg_len;
-                                                        // TODO adjust rcv window
-
+                                                FinWait1 => {
+                                                    if tcb.snd_nxt == pkt_ack {
+                                                        // received ACK of FIN
+                                                        tcb.state = FinWait2;
+                                                    }
+                                                }
+                                                FinWait2 => {
+                                                    if tcb.retransmit_q.is_empty() {
+                                                        println!("CLOSE succeeded");
+                                                    }
+                                                }
+                                                Closing => {
+                                                    if tcb.snd_nxt == pkt_ack {
+                                                        // received ACK of FIN
+                                                        tcb.state = TimeWait;
+                                                    }
+                                                }
+                                                LastAck => {
+                                                    // should be always true
+                                                    if tcb.snd_nxt == pkt_ack {
+                                                        // received ACK of FIN
+                                                        tcb.state = Closed;
+                                                        break; // delete TCB
+                                                    }
+                                                }
+                                                TimeWait => {
+                                                    if pkt_flags & TcpFlags::FIN == TcpFlags::FIN {
                                                         // Send ACK
                                                         t_params = TcpParams {
                                                             src_port: tcb.local_port,
@@ -1451,11 +1459,120 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                                                          None,
                                                                          &mut pkt_buf);
                                                         should_send_packet = true;
-                                                    } else {
-                                                        warn!("No place in recv window!");
                                                     }
+                                                    if let Some(ref qs) = tcb.qr {
+                                                        qs.push(Message::Timeout {
+                                                            to: TimeoutKind::TimeWaitTO,
+                                                        });
+                                                    }
+
                                                 }
                                                 _ => {}
+                                            }
+
+                                            // payload processing, see pg. 74
+                                            match tcb.state {
+                                                Estab | FinWait1 | FinWait2 => {
+                                                    tcb.seg_q
+                                                        .insert(pkt_ack, pkt.payload().to_vec());
+
+                                                    // Remove acknowledged segments from seg_q
+                                                    let seq_nums: Vec<_> =
+                                                        tcb.seg_q.keys().cloned().collect();
+                                                    for seq_num in seq_nums {
+                                                        if seq_num > tcb.rcv_nxt {
+                                                            break;
+                                                        }
+                                                        if let Some(seg) = tcb.seg_q
+                                                            .remove(&seq_num) {
+                                                            // TODO check for overflow
+                                                            tcb.rcv_buffer.copy_from_slice(&seg);
+                                                        }
+                                                    }
+
+                                                    // adjust rcv window
+                                                    tcb.rcv_wnd -= seg_len as u16;
+                                                    debug!("rcv_wnd = {:?}", tcb.rcv_wnd);
+                                                    tcb.rcv_nxt = pkt_seq_num + seg_len;
+
+                                                    // Send ACK
+                                                    t_params = TcpParams {
+                                                        src_port: tcb.local_port,
+                                                        dst_port: tcb.remote_port,
+                                                        seq_num: tcb.snd_nxt,
+                                                        ack_num: tcb.rcv_nxt,
+                                                        flags: TcpFlags::ACK,
+                                                        window: tcb.rcv_wnd,
+                                                    };
+                                                    build_tcp_header(t_params,
+                                                                     lip,
+                                                                     dip,
+                                                                     None,
+                                                                     &mut pkt_buf);
+                                                    should_send_packet = true;
+                                                }
+                                                _ => {}
+                                            }
+
+                                            if pkt_flags & TcpFlags::FIN == TcpFlags::FIN {
+                                                match tcb.state {
+                                                    Closed | Listen | SynSent => {
+                                                        // drop the segment
+
+                                                    }
+                                                    _ => {
+                                                        println!("connection closing");
+                                                        if tcb.rcv_buffer.remaining() != 0 {
+                                                            tcb.read_resp.push(Some(()));
+                                                            tcb.rcv_nxt = pkt_ack;
+
+                                                            // Send ACK
+                                                            t_params = TcpParams {
+                                                                src_port: tcb.local_port,
+                                                                dst_port: tcb.remote_port,
+                                                                seq_num: tcb.snd_nxt,
+                                                                ack_num: tcb.rcv_nxt,
+                                                                flags: TcpFlags::ACK,
+                                                                window: tcb.rcv_wnd,
+                                                            };
+                                                            build_tcp_header(t_params,
+                                                                             lip,
+                                                                             dip,
+                                                                             None,
+                                                                             &mut pkt_buf);
+                                                            should_send_packet = true;
+                                                        }
+                                                        match tcb.state {
+                                                            SynRcvd | Estab => {
+                                                                tcb.state = CloseWait;
+                                                            }
+                                                            FinWait1 => {
+                                                                if tcb.snd_nxt == pkt_ack {
+                                                                    tcb.state = TimeWait;
+                                                                    if let Some(ref qs) = tcb.qr {
+                                                                        qs.push(Message::Timeout {
+                                                                            to: TimeoutKind::TimeWaitTO,
+                                                                        });
+                                                                    }
+                                                                } else {
+                                                                    tcb.state = Closing;
+                                                                }
+                                                            }
+                                                            FinWait2 => {
+                                                                tcb.state = TimeWait;
+                                                                if let Some(ref qs) = tcb.qr {
+                                                                    qs.push(Message::Timeout {
+                                                                        to: TimeoutKind::TimeWaitTO,
+                                                                    });
+                                                                }
+                                                            }
+                                                            _ => {
+                                                                // remain in same state
+                                                            }
+                                                        }
+                                                    }
+
+                                                }
                                             }
                                         }
                                         // LastAck => {}
