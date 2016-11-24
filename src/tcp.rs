@@ -523,7 +523,10 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
 }
 
 // TODO consider moving inside one of impl TCP or TCB
-pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) -> Result<Vec<u8>, String> {
+pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>,
+              socket: usize,
+              size: usize)
+              -> Result<(Vec<u8>, Option<()>), String> {
     if (*tcp_ctx.read().unwrap()).invalidated_socks.contains(&socket) {
         return Err(format!("error: socket {:?} is invalidated", socket));
     }
@@ -554,7 +557,7 @@ pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) -> Result<
         let tcb = tcp.tc_blocks[&socket].clone();
         let tcb = &mut (*tcb.write().unwrap());
         tcb.rcv_buffer.copy_to_slice(&mut ret);
-        Ok(ret)
+        Ok((ret, Some(())))
     } else {
         // EOF
         let tcp = &(*tcp_ctx.read().unwrap());
@@ -563,7 +566,7 @@ pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) -> Result<
         let sz = tcb.rcv_buffer.remaining();
         let mut ret = vec![0u8; sz];
         tcb.rcv_buffer.copy_to_slice(&mut ret);
-        Ok(ret)
+        Ok((ret, None))
     }
 }
 
