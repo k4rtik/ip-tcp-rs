@@ -500,9 +500,26 @@ pub fn v_connect(tcp_ctx: &Arc<RwLock<TCP>>,
         }
     }
 
-    trace!("connect thread for socket {} going to block", socket);
-    // blocks
-    conn_qr.pop()
+    for i in 0..3 {
+        thread::sleep(Duration::from_secs(i + 1));
+        if conn_qr.try_pop().is_some() {
+            return Ok(());
+        } else {
+            let tcp = &(*tcp_ctx.read().unwrap());
+            match tcp.sock_to_sender.get(&socket) {
+                Some(qs) => {
+                    qs.push(Message::UserCall {
+                        call: UserCallKind::Open {
+                            dst_addr: dst_addr,
+                            port: port,
+                        },
+                    });
+                }
+                None => return Err("ENOTSOCK: No TCB associated with this connection!".to_owned()),
+            }
+        }
+    }
+    Err("timed out!".to_owned())
 }
 
 // TODO consider moving inside one of impl TCP or TCB
@@ -787,6 +804,9 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                 tcb.state = Status::SynSent;
 
                                 should_send_packet = true;
+                            }
+                            SynSent => {
+                                info!("retrying connection");
                             }
                             _ => {
                                 error!("connection already exists");
