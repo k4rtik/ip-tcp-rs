@@ -32,6 +32,8 @@ use datalink::{DataLink, Interface, SocketAddrInterface, RouteInfo};
 use rip::{RipCtx, Route};
 use tcp::{Socket, TCP};
 
+const MAX_READ_REQ: usize = 1024;
+
 fn parse_lnx(filename: &str) -> RouteInfo {
     let mut file = BufReader::new(File::open(filename).unwrap());
 
@@ -240,18 +242,20 @@ pub fn recv_file_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
     let rip_ctx = rip_ctx.clone();
     let tcp_ctx = tcp_ctx.clone();
     thread::spawn(move || {
-        let mut buffer = File::create(fl).unwrap();
         match tcp::v_accept(tcp_ctx.clone(), dl_ctx.clone(), rip_ctx.clone(), sock, None) {
             Ok(socket) => {
+                let mut buffer = File::create(fl).unwrap();
                 loop {
-                    match tcp::v_read(&tcp_ctx, socket, 1024) {
+                    match tcp::v_read(&tcp_ctx, socket, MAX_READ_REQ) {
                         Ok(data) => {
+                            trace!("Data recvd: {:?}", data);
+                            if data.is_empty() {
+                                break;
+                            }
                             buffer.write_all(&data).unwrap();
                         }
                         Err(e) => {
-                            if e == "Connection Closed!" {
-                                break;
-                            }
+                            println!("Error: {}", e);
                         }
                     }
                 }
@@ -459,7 +463,7 @@ fn cli_impl(dl_ctx: Arc<RwLock<DataLink>>,
                         } else {
                             let file_name = cmd_vec[1].to_string();
                             let port = cmd_vec[2].parse::<u16>().unwrap();
-                            // recv_file_cmd(&tcp_ctx, &dl_ctx, &rip_ctx, file_name, port);
+                            recv_file_cmd(&tcp_ctx, &dl_ctx, &rip_ctx, file_name, port);
                         }
                     }
                     "window" => {

@@ -557,7 +557,13 @@ pub fn v_read(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize) -> Result<
         Ok(ret)
     } else {
         // EOF
-        Ok(vec![])
+        let tcp = &(*tcp_ctx.read().unwrap());
+        let tcb = tcp.tc_blocks[&socket].clone();
+        let tcb = &mut (*tcb.write().unwrap());
+        let sz = tcb.rcv_buffer.remaining();
+        let mut ret = vec![0u8; sz];
+        tcb.rcv_buffer.copy_to_slice(&mut ret);
+        Ok(ret)
     }
 }
 
