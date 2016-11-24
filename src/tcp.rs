@@ -908,7 +908,24 @@ fn conn_state_machine(tcb_ref: Arc<RwLock<TCB>>,
                                     });
                                 }
                             }
-                            CloseWait => {}
+                            CloseWait => {
+                                // Remove acknowledged segments from seg_q
+                                let seq_nums: Vec<_> = tcb.seg_q.keys().cloned().collect();
+                                for seq_num in seq_nums {
+                                    if seq_num > tcb.rcv_nxt {
+                                        break;
+                                    }
+                                    if let Some(seg) = tcb.seg_q.remove(&seq_num) {
+                                        tcb.rcv_buffer.copy_from_slice(&seg);
+                                    }
+                                }
+                                if tcb.rcv_buffer.remaining() >= num_bytes {
+                                    tcb.read_resp.push(Some(()));
+                                } else {
+                                    error!("connection closing");
+                                    tcb.read_resp.push(None);
+                                }
+                            }
                             _ => {
                                 error!("connection closing");
                             }
