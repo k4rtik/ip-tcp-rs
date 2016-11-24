@@ -247,12 +247,11 @@ pub fn recv_file_cmd(tcp_ctx: &Arc<RwLock<TCP>>,
                 let mut buffer = File::create(fl).unwrap();
                 loop {
                     match tcp::v_read(&tcp_ctx, socket, MAX_READ_REQ) {
-                        Ok(data) => {
-                            trace!("Data recvd: {:?}", data);
-                            if data.is_empty() {
-                                break;
+                        Ok(res) => {
+                            match res.1 {
+                                Some(_) => buffer.write_all(&res.0).unwrap(),
+                                None => break,
                             }
-                            buffer.write_all(&data).unwrap();
                         }
                         Err(e) => {
                             println!("Error: {}", e);
@@ -272,11 +271,16 @@ pub fn recv_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: b
     if block {
         loop {
             match tcp::v_read(tcp_ctx, socket, size - data_recv.len()) {
-                Ok(mut data) => {
-                    data_recv.append(&mut data);
-                    if data_recv.len() >= size {
-                        debug!("bytes written: {:?}", data_recv.len());
-                        break;
+                Ok(mut res) => {
+                    match res.1 {
+                        Some(_) => {
+                            data_recv.append(&mut res.0);
+                            if data_recv.len() >= size {
+                                debug!("bytes written: {:?}", data_recv.len());
+                                break;
+                            }
+                        }
+                        None => break,
                     }
                 }
                 Err(e) => println!("{:?}", e),
@@ -284,8 +288,10 @@ pub fn recv_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: b
         }
     } else {
         match tcp::v_read(tcp_ctx, socket, size) {
-            Ok(mut data) => {
-                data_recv.append(&mut data);
+            Ok(mut res) => {
+                if let Some(_) = res.1 {
+                    data_recv.append(&mut res.0)
+                }
             }
             Err(e) => println!("{:?}", e),
         }
