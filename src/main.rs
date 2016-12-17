@@ -289,7 +289,7 @@ pub fn recv_cmd(tcp_ctx: &Arc<RwLock<TCP>>, socket: usize, size: usize, block: b
     } else {
         match tcp::v_read(tcp_ctx, socket, size) {
             Ok(mut res) => {
-                if let Some(_) = res.1 {
+                if res.1.is_some() {
                     data_recv.append(&mut res.0)
                 }
             }
